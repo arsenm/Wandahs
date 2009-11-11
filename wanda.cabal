@@ -21,5 +21,5 @@ Executable wanda
   Main-Is: Wanda.hs
   pkgconfig-depends: gtk+-2.0, glib-2.0, gobject-2.0
   Hs-Source-Dirs: .
-  Build-Depends: base, glib, gtk, mtl, haskell98
+  Build-Depends: base, glib, gtk, mtl, haskell98, X11, array
 
