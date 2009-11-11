@@ -1,0 +1,25 @@
+name: wanda
+version: 0.1
+license: GPL
+license-file: COPYING
+maintainer: arsenm2@rpi.edu
+stability: experimental
+homepage: http://example.com
+category: Graphics
+Synopsis: Wanda the fish
+Description: A swimming fish
+build-depends: base, glib, gtk
+Build-Type: Simple
+
+Cabal-Version: >= 1.6
+
+Flag Debug
+  Description: Enable debug support
+  Default:     True
+
+Executable wanda
+  Main-Is: Wanda.hs
+  pkgconfig-depends: gtk+-2.0, glib-2.0, gobject-2.0
+  Hs-Source-Dirs: .
+  Build-Depends: base, glib, gtk, mtl, haskell98
+
