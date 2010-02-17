@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, ForeignFunctionInterface #-}
+{-# LANGUAGE ForeignFunctionInterface, BangPatterns #-}
 {-# OPTIONS_GHC -W -O2 -funbox-strict-fields #-}
 {-# CFILES wanda_image.c #-}
 
@@ -10,7 +10,8 @@ import Graphics.UI.Gtk.Gdk.Screen
 
 import System.Glib.Attributes
 
-import Control.Monad
+--import Control.Monad
+--import Control.Monad.State
 --import Control.Applicative
 import Data.Maybe
 import Data.Array
@@ -59,19 +60,35 @@ invisiCairo dw = renderWithDrawable dw drawTransparent
 
 fishCount = 8
 
-data FishState = FishState { pos :: (!Int, !Int),
-                             curFrame :: !Int,
+frame = snd . curFrame
+
+type Pos = (Int, Int)
+
+data FishState = FishState { pos :: !Pos,
+                             curFrame :: !(Int, Pixbuf),
                              frameN :: !Int,
-                             backwards :: !Bool
-                           } deriving (Eq, Show)
-                                      --running away?
-                                      -- speed?
-                                      -- size?
-                                      -- maybe not?
+                             backwards :: !Bool,
+                             speed :: !Int,
+                             frames :: Array Int (Pixbuf, Pixbuf)
+                           }
+                 --running away?
+                 -- speed?
+                 -- size?
+                 -- maybe not?
 
-updateFishState :: FishState -> IO FishState
-updateFishState st = do
+updateFishState :: FishState -> FishState
+updateFishState st = st { curFrame = nextFrame st,
+                          pos = newPos
+                        }
+  where (x,y) = pos st
+        spd = speed st
+        newPos = (x + spd, y + spd)
 
+fishIO :: Image -> Window -> FishState -> IO ()
+fishIO img win fs = do
+  let move = uncurry (windowMove win)
+  move (pos fs)
+  imageSetFromPixbuf img (frame fs)
 
 
 
@@ -85,12 +102,14 @@ wrap arr x | x > u     = l
 
 
 -- Get next frame and index depending on stuff
-nextFrame :: FishState -> Array Int (a,a) -> (a, Int)
-nextFrame st arr = let (get, inc) = if backwards st
-                                      then (fst, (-))
-                                      else (snd, (+))
-                       next = arr `wrap` (curFrame st `inc` 1)
-                   in (get (arr ! next), next)
+nextFrame :: FishState -> (Int, Pixbuf)
+nextFrame st = let arr = frames st
+                   i = fst (curFrame st)
+                   (get, inc) = if backwards st
+                                  then (fst, (-))
+                                  else (snd, (+))
+                   next = arr `wrap` (i `inc` speed st)
+               in (next, get (arr ! next))
 
 every = flip timeoutAdd
 
@@ -139,31 +158,27 @@ main = do
   winDraw <- widgetGetDrawWindow win
   onExpose win (\_ -> invisiCairo winDraw >> return False)
 
+  let iniFrame = snd (wandaFrames ! 1)
 
   winPos <- windowGetPosition win
-  let initialFishState = FishState { pos = winPos,
-                                     curFrame = 1,
-                                     frameN = fishCount,
-                                     backwards = True
-                                   }
+  let iniFishState = FishState { pos = winPos,
+                                 curFrame = (1, iniFrame),
+                                 frameN = fishCount,
+                                 backwards = False,
+                                 speed = 3,
+                                 frames = wandaFrames
+                               }
   -- set initial image
-  imageSetFromPixbuf img (snd (wandaFrames ! 1))
+  imageSetFromPixbuf img iniFrame
 
-  imgDraw <- widgetGetDrawWindow img
-  fishRef <- newIORef initialFishState
+--imgDraw <- widgetGetDrawWindow img
+  fishRef <- newIORef iniFishState
+
 
 -- Can I assume the position is what I set last time?  If the window
 -- manager isn't respecting move, nothing will work anyways
-  every 100 $ do (x,y) <- windowGetPosition win
-                 getClicked
-                 windowMove win (x + 3) y
-
-                 fs <- readIORef fishRef
-                 let (fr, i) = nextFrame fs wandaFrames
-                 imageSetFromPixbuf img fr
-                 writeIORef fishRef (fs { curFrame = i })
-
-                 (iw, ih) <- drawableGetSize imgDraw
+  every 100 $ do modifyIORef fishRef updateFishState
+                 fishIO img win =<< readIORef fishRef
                  return True
 
   mainGUI
