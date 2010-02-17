@@ -1,3 +1,6 @@
+{-# LANGUAGE CPP, ForeignFunctionInterface #-}
+{-# OPTIONS_GHC -O2 -funbox-strict-fields #-}
+{-# CFILES wanda_image.c #-}
 
 import Graphics.Rendering.Cairo
 import qualified Graphics.Rendering.Cairo as C
@@ -14,18 +17,10 @@ import Data.Maybe
 import Data.Array
 import Data.IORef
 
+import Foreign.Ptr
 
-import Graphics.UI.Gtk.Types
---import Graphics.UI.Gtk.Windows.Window
---import System.Glib.GObject
-
---import WandaLib
-
-
---GdkScreen *screen = gtk_widget_get_screen(widget);
---GdkColormap *colormap = gdk_screen_get_rgba_colormap(screen);
---    /* Now we have a colormap appropriate for the screen, use it */
---    gtk_widget_set_colormap(widget, colormap);
+foreign import ccall "wanda_image.h &wandaimage"
+  wandaImage :: Ptr InlineImage
 
 
 setAlpha widget = do
@@ -78,8 +73,9 @@ main = do
   widgetSetDoubleBuffered image True
   setAlpha image
 
+ --pixbufNewFromFile "/home/matt/src/wandahs/wanda.png"
   -- get the stip of fish pictures and split it into an array of frames
-  wandaFrames <- splitStrip fishCount =<< pixbufNewFromFile "/home/matt/src/wandahs/wanda.png"
+  wandaFrames <- splitStrip fishCount =<< pixbufNewFromInline wandaImage
   let wandaAnim = wandaFrames ! 1
   imageSetFromPixbuf image wandaAnim
 
