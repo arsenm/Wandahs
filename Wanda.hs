@@ -61,6 +61,7 @@ invisiCairo dw = renderWithDrawable dw drawTransparent
 fishCount = 8
 
 frame = snd . curFrame
+frameIdx = fst . curFrame
 
 type Pos = (Int, Int)
 
@@ -101,15 +102,15 @@ wrap arr x | x > u     = l
              where (l,u) = bounds arr
 
 
+
 -- Get next frame and index depending on stuff
 nextFrame :: FishState -> (Int, Pixbuf)
 nextFrame st = let arr = frames st
-                   i = fst (curFrame st)
                    (get, inc) = if backwards st
                                   then (fst, (-))
                                   else (snd, (+))
-                   next = arr `wrap` (i `inc` speed st)
-               in (next, get (arr ! next))
+                   n = arr `wrap` (frameIdx st `inc` 1)
+               in (n, get (arr ! n))
 
 every = flip timeoutAdd
 
