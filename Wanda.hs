@@ -59,6 +59,10 @@ invisiCairo dw = renderWithDrawable dw drawTransparent
 
 
 fishCount = 8
+fishHeight = 55
+fishWidth = 90
+defaultSpeed = 3
+
 
 frame = snd . curFrame
 frameIdx = fst . curFrame
@@ -138,8 +142,8 @@ main = do
             windowTitle := "Wanda",
             windowDecorated := False,
             windowTypeHint := WindowTypeHintDock, -- Dock
-            windowDefaultHeight := 55,
-            windowDefaultWidth := 90,
+            windowDefaultHeight := fishHeight,
+            windowDefaultWidth := fishWidth,
             windowAcceptFocus := True, -- False?
             windowResizable := False,
             windowSkipTaskbarHint := True,
@@ -166,7 +170,7 @@ main = do
                                  curFrame = (1, iniFrame),
                                  frameN = fishCount,
                                  backwards = False,
-                                 speed = 3,
+                                 speed = defaultSpeed,
                                  frames = wandaFrames
                                }
   -- set initial image
