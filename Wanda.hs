@@ -31,32 +31,19 @@ import Graphics.UI.Gtk.Types
 setAlpha widget = do
   screen <- widgetGetScreen widget
   colormap <- screenGetRGBAColormap screen
-  putStrLn $ if isJust colormap
-               then "YES"
-               else "No"
   maybe (return ()) (widgetSetColormap widget) colormap
 
 --setAlpha window --TODO: also call setAlpha on alpha screen change
 
+
 getMask :: Int -> Int -> IO Pixmap
 getMask w h = do
   pb <- pixmapNew (Nothing :: Maybe DrawWindow) w h (Just 1)
--- ???
---  gcVals <- newGCValues
---  let newGcVal = gcVals { function = Nor }
   return pb
 
 
-
---  gc <- gcNew
---  gcVals <- newGCValues
-
---  let newGcVal = gcVals { clipMask = ??? }
--- 0,0 origin image?
---  drawPixbuf drawWindow gc pb 0 0 0 0 w h RgbDitherNormal 0 0
-
-splitStrip :: Pixbuf -> Int -> IO (Array Int Pixbuf)
-splitStrip orig n = do
+splitStrip :: Int -> Pixbuf -> IO (Array Int Pixbuf)
+splitStrip n orig = do
   w <- pixbufGetWidth orig
   h <- pixbufGetHeight orig
   let iw = w `div` n
@@ -82,89 +69,71 @@ nextFrame arr i = let (l,u) = bounds arr
                        then l
                        else next
 
--- (/!/) :: Ix i => Array i e -> i -> e
 every = flip timeoutAdd
 
 main = do
   initGUI
 
-
   image <- imageNew
-  wandaStrip <- pixbufNewFromFile "/home/matt/src/wandahs/wanda.png"
-
-  wandaAnimFrames <- splitStrip wandaStrip fishCount
-  let wandaAnim = wandaAnimFrames ! 1
---  wandaAnim <- pixbufAnimationNewFromFile "/home/matt/Desktop/atom.gif"
-
---  wandaAnim <- pixbufAddAlpha wandaAnim (Just 0 0 0)
---  pixbufFill wandaAnim 0 0 0 0
-  imageSetFromPixbuf image wandaAnim
-
   widgetSetDoubleBuffered image True
-
-  screen <- widgetGetScreen image
-  cmap <- screenGetRGBAColormap screen
-
-  win <- windowNew -- Popup -- ??
-  widgetSetAppPaintable win True -- ???
-  onHide win mainQuit
-
-  setAlpha win
   setAlpha image
 
+  -- get the stip of fish pictures and split it into an array of frames
+  wandaFrames <- splitStrip fishCount =<< pixbufNewFromFile "/home/matt/src/wandahs/wanda.png"
+  let wandaAnim = wandaFrames ! 1
+  imageSetFromPixbuf image wandaAnim
 
-
-{-
-  box <- vBoxNew False 0
-  btn <- buttonNewWithLabel "arst"
-  boxPackStart box btn PackNatural 0
--}
-
-
-
---  windowSetRole win "Dialog"
+ -- Setup the window. Needs to be drawable for transparency to work.
+  win <- windowNew
+  widgetSetAppPaintable win True
+  onHide win mainQuit
+  setAlpha win
 
   set win [ containerChild := image,
             windowTitle := "Wanda",
---            windowPosition := WinPosMouse,
             windowDecorated := False,
             windowTypeHint := WindowTypeHintDock, -- Dock
             windowDefaultHeight := 55,
             windowDefaultWidth := 90,
             windowAcceptFocus := True, -- False?
-            windowResizable := True, -- False
+            windowResizable := False,
             windowSkipTaskbarHint := True,
             windowSkipPagerHint := True,
             windowModal := True ]
-          --windowKeepAbove := True,
-          --windowOpacity := 0.5 ]
---  windowSetKeepAbove win True
---  windowSetHasFrame win False
+
   windowSetPosition win WinPosNone
+  windowSetKeepAbove win True
+  windowSetRole win "Desktop Fish"
+--windowSetHasFrame win False
 
   widgetShowAll win
 
   winDraw <- widgetGetDrawWindow win
-  invisiCairo winDraw
 
-
+  -- The transparency needs to be redone as the window is redrawn
   onExpose win (\_ -> invisiCairo winDraw >> return False)
+
+  imgDraw <- widgetGetDrawWindow image
 
   frameRef <- newIORef 1
   every 100 $ do (x,y) <- windowGetPosition win
-                 windowMove win (x + 15) y
-                 modifyIORef frameRef (nextFrame wandaAnimFrames)
+                 windowMove win (x + 3) y
+                 modifyIORef frameRef (nextFrame wandaFrames)
                  next <- readIORef frameRef
-                 imageSetFromPixbuf image (wandaAnimFrames ! next)
+                 imageSetFromPixbuf image (wandaFrames ! next)
+
+                 (iw, ih) <- drawableGetSize imgDraw
+
+                 -- TODO: I can't get the clip to stop clickthrough
+                 -- without a function that needs to be bound in
+                 -- gtk2hs
+
+                 --pm <- pixmapNew (Just imgDraw) iw ih (Just 1)
+                 --pm <- pixmapNew (Nothing::Maybe DrawWindow) iw ih (Just 1)
+                 --widgetShapeCombineMask      win (Just pm) 0 0
+                 --widgetInputShapeCombineMask win (Just pm) 0 0
+
                  return True
-
-
---  drawWindowShapeCombineMask winDraw Nothing (-1) (-1)
-
---  drawableGetSize winDraw >>= print
---  gc <- gcNew winDraw
---drawPolygon winDraw gc True [(0,0),(30,30),(0,30),(30,0)]
---  drawPixbuf winDraw gc wandaAnim 0 0 0 0 (-1) (-1) RgbDitherNormal 0 0
 
   mainGUI
 
