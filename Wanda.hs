@@ -8,16 +8,21 @@ import qualified Graphics.Rendering.Cairo as C
 import Graphics.UI.Gtk
 import Graphics.UI.Gtk.Gdk.Screen
 
-import System.Glib.Attributes
+import System.Glib.Attributes hiding (get)
 
 --import Control.Monad
---import Control.Monad.State
---import Control.Applicative
+--import Control.Arrow
+import Control.Monad.State
+import Control.Applicative
 import Data.Maybe
 import Data.Array
 import Data.IORef
 
 import Foreign.Ptr
+
+import Random
+
+import Debug.Trace
 
 foreign import ccall "wanda_image.h &wandaimage"
   wandaImage :: Ptr InlineImage
@@ -70,24 +75,87 @@ frameIdx = fst . curFrame
 type Pos = (Int, Int)
 
 data FishState = FishState { pos :: !Pos,
+                             dest :: !Pos,
                              curFrame :: !(Int, Pixbuf),
                              frameN :: !Int,
                              backwards :: !Bool,
                              speed :: !Int,
+                             rndGen :: StdGen,
+                             screenSize :: !(Int,Int),
                              frames :: Array Int (Pixbuf, Pixbuf)
                            }
                  --running away?
-                 -- speed?
                  -- size?
                  -- maybe not?
 
-updateFishState :: FishState -> FishState
-updateFishState st = st { curFrame = nextFrame st,
-                          pos = newPos
-                        }
-  where (x,y) = pos st
-        spd = speed st
-        newPos = (x + spd, y + spd)
+
+dist :: Pos -> Pos -> Int
+dist (x1,y1) (x2,y2) = round . sqrt . fromIntegral $ (x1 - x2)^2 + (y1 - y2)^2
+
+
+updateFishState = execState fishTick
+
+updatePos newPos = modify (\s -> s { pos = newPos })
+
+
+reachedDbg cur dest = trace (concat ["Reached destination: p = ",
+                                     show cur,
+                                     " d = ",
+                                     show dest]) (return ())
+
+newDestDbg :: State FishState ()
+newDestDbg = do
+  d <- gets dest
+  trace ("Reached dest: " ++ show d) (return ())
+
+fishTick :: State FishState ()
+fishTick = do
+  spd     <- gets speed
+  p@(x,y) <- gets pos
+  d       <- gets dest
+
+  when (dist p d <= spd) (newDest >> reachedDbg p d) --get close enough
+
+  let (dx,dy) = vec spd p d
+
+--  trace ("p: " ++ show p ++ "  p': " ++ show p') (return ())
+  updatePos (x + dx, y + dy)
+
+  updateFrame
+
+
+-- sqrt (dx^2 + (k * dx) ^2) = s^2
+-- k = ratio of distance to travel
+-- result is a vector with length s
+-- with proportions depending on how far in what direction to do
+
+-- | Approximate a vector of ~length d from the first point to the
+-- second with a ratio depending on the distance to be traveled.
+vec :: Int -> (Int, Int) -> (Int, Int) -> (Int, Int)
+vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
+                            b = fromIntegral (y2 - y1)
+                            k = b / a
+                            s = fromIntegral d
+                            dx = sqrt (s^2 / (1 + k^2))
+                        in (floor dx, floor $ k * dx)
+
+
+
+-- updates to a new destination and randomgen
+newDest :: State FishState ()
+newDest = do
+  (sx, sy) <- gets screenSize
+  gen      <- gets rndGen
+
+--CHECKME: Screen from 0 or 1?
+--TODO: lower and upper some percent beyond limit
+  let (x, gen')  = randomR ((-10), sx + 10) gen -- TODO: Instance Random Tuple makes easier
+  let (y, gen'') = randomR ((-10), sy + 10) gen'
+  modify (\s -> s { rndGen = gen'',
+                    dest = (x,y)
+                  } )
+  newDestDbg
+
 
 fishIO :: Image -> Window -> FishState -> IO ()
 fishIO img win fs = do
@@ -100,25 +168,38 @@ fishIO img win fs = do
 --CHECKME: Does it actually matter which way you move through the
 --frames with respect to travel direction
 
+-- I may be retarded but mod breaks with going backwards
 wrap arr x | x > u     = l
            | x < l     = u
            | otherwise = x
              where (l,u) = bounds arr
 
 
+-- | Move the current frame to the next depending on the direction of
+-- travel. Backwards means fish moving right to left. Forwards is left
+-- to right.
+updateFrame :: State FishState ()
+updateFrame = do
+  arr <- gets frames
+  bw  <- gets backwards
+  idx <- gets frameIdx
+  let (acc, inc) = if bw
+                     then (fst, (-))
+                     else (snd, (+))
+      n = arr `wrap` (idx `inc` 1)
+      pb = acc (arr ! n)
+  modify (\s -> s { curFrame = (n,pb) })
 
--- Get next frame and index depending on stuff
-nextFrame :: FishState -> (Int, Pixbuf)
-nextFrame st = let arr = frames st
-                   (get, inc) = if backwards st
-                                  then (fst, (-))
-                                  else (snd, (+))
-                   n = arr `wrap` (frameIdx st `inc` 1)
-               in (n, get (arr ! n))
+
+randomIOPos :: IO Pos
+randomIOPos = liftA2 (,) randomIO randomIO
 
 every = flip timeoutAdd
 
  --pixbufNewFromFile "/home/matt/src/wandahs/wanda.png"
+
+getScreenSize :: Screen -> IO (Int, Int)
+getScreenSize scr = liftA2 (,) (screenGetWidth scr) (screenGetHeight scr)
 
 fishFrames :: IO (Array Int (Pixbuf, Pixbuf))
 fishFrames = splitStrip fishCount =<< pixbufNewFromInline wandaImage
@@ -165,13 +246,24 @@ main = do
 
   let iniFrame = snd (wandaFrames ! 1)
 
+--TODO: Update screen size changed signal
+
+
+
   winPos <- windowGetPosition win
+  newGen <- getStdGen
+  scrSize <- getScreenSize =<< widgetGetScreen win
+--iniDest <- randomIOPos
+  let iniDest = (100, 100)
   let iniFishState = FishState { pos = winPos,
                                  curFrame = (1, iniFrame),
                                  frameN = fishCount,
                                  backwards = False,
                                  speed = defaultSpeed,
-                                 frames = wandaFrames
+                                 frames = wandaFrames,
+                                 dest = iniDest,
+                                 screenSize = scrSize,
+                                 rndGen = newGen
                                }
   -- set initial image
   imageSetFromPixbuf img iniFrame
