@@ -43,6 +43,7 @@ getMask w h = do
   return pb
 -}
 
+
 -- pair of pixbufs. Left points left, right fish goes right
 splitStrip :: Int -> Pixbuf -> IO (Array Int (Pixbuf, Pixbuf))
 splitStrip n orig = do
@@ -67,6 +68,10 @@ fishCount = 8
 fishHeight = 55
 fishWidth = 90
 defaultSpeed = 5
+
+-- Unfortunately the wrong kind of scale.
+-- Fish puns for great justice.
+fishScale = 0.5
 
 
 frame = snd . curFrame
@@ -142,7 +147,7 @@ vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
                                      then dy
                                      else negate dy
 
-                        in (floor ddx, floor ddy)
+                        in (round ddx, round ddy)
 --TODO: floor or round? ceiling?
 --TODO: Use floor with negative numbers?
 --TODO: dx, dy configurable speed maybe
@@ -153,10 +158,17 @@ newDest = do
   (sx, sy) <- gets screenSize
   gen      <- gets rndGen
 
---CHECKME: Screen from 0 or 1?
---TODO: lower and upper some percent beyond limit
-  let (x, gen')  = randomR ((-10), sx + 10) gen
-  let (y, gen'') = randomR ((-10), sy + 10) gen'
+  --TODO: Maybe some kind of biasing to get longer, smoother
+  --paths. Sometimes can get a close by new destination and a weird
+  --jerk could happen
+
+  -- limits are (screen x +- 10%, screen y +- 10%)
+  let (tx,ty) = (sx `div` 10, sy `div` 10)
+  let xBnds  = (negate tx, sx + tx)
+  let yBnds = (negate ty, sy + ty)
+
+  let (x, gen')  = randomR xBnds gen
+  let (y, gen'') = randomR yBnds gen'
   modify (\s -> s { rndGen = gen'',
                     dest = (x,y)
                   } )
@@ -216,6 +228,20 @@ updateFrame = do
 randomIOPos :: IO Pos
 randomIOPos = liftA2 (,) randomIO randomIO
 
+randomIOStart :: Screen -> IO Pos
+randomIOStart scr = do
+  (sx, sy) <- getScreenSize scr
+  let (tx, ty) = (sx `div` 10,  sy `div` 10)
+  let xBnds = (negate tx, 0)
+  let yBnds = (0, sy)
+
+  liftA2 (,) (randomRIO xBnds) (randomRIO yBnds)
+--TODO: Probability of starting on right, but need to also set backwards
+--  let leftP = randomIO
+
+
+
+
 every = flip timeoutAdd
 
  --pixbufNewFromFile "/home/matt/src/wandahs/wanda.png"
@@ -223,6 +249,7 @@ every = flip timeoutAdd
 getScreenSize :: Screen -> IO (Int, Int)
 getScreenSize scr = liftA2 (,) (screenGetWidth scr) (screenGetHeight scr)
 
+-- split the image up into the indivdual fish frames
 fishFrames :: IO (Array Int (Pixbuf, Pixbuf))
 fishFrames = splitStrip fishCount =<< pixbufNewFromInline wandaImage
 
@@ -267,12 +294,20 @@ createWanda wandaFrames = do
 
 --TODO: Update screen size changed signal
 
-  winPos <- windowGetPosition win
-  newGen <- newStdGen
-  scrSize <- getScreenSize =<< widgetGetScreen win
---iniDest <- randomIOPos
-  let iniDest = (100, 100)
-  let iniFishState = FishState { pos = winPos,
+  scr <- widgetGetScreen win
+
+  newGen  <- newStdGen
+  scrSize <- getScreenSize scr
+  iniPos  <- randomIOStart scr  -- random offscreen location to start from
+  iniDest <- randomIOPos        -- where to go from there
+
+  --TODO: Maybe different range for iniDest so not offscreen. Also be
+  --able to start from right / backwards
+
+  uncurry (windowMove win) iniPos
+
+--  let iniDest = (100, 100)
+  let iniFishState = FishState { pos = iniPos,
                                  curFrame = (1, iniFrame),
                                  frameN = fishCount,
                                  backwards = False,
@@ -301,8 +336,10 @@ main = do
   initGUI
   fr <- fishFrames
 
--- get the stip of fish pictures and split it into an array of frames
+--FIXME: Still observing some moving backwards with forwards image in wanda parade
+
   createWanda fr
+--  replicateM_ 10 (createWanda fr)
 
   mainGUI
 
