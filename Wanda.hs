@@ -226,14 +226,9 @@ getScreenSize scr = liftA2 (,) (screenGetWidth scr) (screenGetHeight scr)
 fishFrames :: IO (Array Int (Pixbuf, Pixbuf))
 fishFrames = splitStrip fishCount =<< pixbufNewFromInline wandaImage
 
-main = do
-  initGUI
-
+createWanda wandaFrames = do
   img <- imageNew
   widgetSetDoubleBuffered img True
-
-  -- get the stip of fish pictures and split it into an array of frames
-  wandaFrames <- fishFrames
 
  -- Setup the window. Needs to be drawable for transparency to work.
   win <- windowNew
@@ -271,8 +266,6 @@ main = do
 
 --TODO: Update screen size changed signal
 
-
-
   winPos <- windowGetPosition win
   newGen <- getStdGen
   scrSize <- getScreenSize =<< widgetGetScreen win
@@ -300,6 +293,14 @@ main = do
   every 100 $ do modifyIORef fishRef updateFishState
                  fishIO img win =<< readIORef fishRef
                  return True
+
+  return win
+
+main = do
+  initGUI
+
+-- get the stip of fish pictures and split it into an array of frames
+  createWanda =<< fishFrames
 
   mainGUI
 
