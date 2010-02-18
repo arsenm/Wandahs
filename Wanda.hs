@@ -144,21 +144,8 @@ vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
 
                         in (floor ddx, floor ddy)
 --TODO: floor or round? ceiling?
---FIXME: Use floor with negative numbers?
---FIXME: dx, dy configurable speed maybe
---Also prevent dx dy = 0 from ever happening.
-{-
-assert :: String -> Bool -> a -> a
-assert s c v = if c
-                 then error ("Assertion failed: " ++ s)
-                 else v
-
-
-printIf :: String -> Bool -> a -> a
-printIf s c v = if c
-                  then trace ("Cond: " ++ s) v
-                  else v
--}
+--TODO: Use floor with negative numbers?
+--TODO: dx, dy configurable speed maybe
 
 -- updates to a new destination and randomgen
 newDest :: State FishState ()
