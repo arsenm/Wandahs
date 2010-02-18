@@ -147,14 +147,20 @@ vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
                             dx = sqrt (s^2 / (1 + k^2))
                             dy = k * dx
 
+               {-
                             ddx = if a > 0
                                     then ceiling dx
                                     else floor (negate dx)
+               -}
+                            ddx = if a > 0
+                                    then dx
+                                    else negate dx
                             ddy = if b > 0
-                                     then ceiling dy
-                                     else floor (negate dy)
+                                     then dy
+                                     else negate dy
 
-                        in (ddx, ddy)
+                        in (floor ddx, floor ddy)
+--TODO: floor or round? ceiling?
 --FIXME: Use floor with negative numbers?
 --FIXME: dx, dy configurable speed maybe
 --Also prevent dx dy = 0 from ever happening.
