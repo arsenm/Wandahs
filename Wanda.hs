@@ -98,36 +98,19 @@ updateFishState = execState fishTick
 
 updatePos newPos = modify (\s -> s { pos = newPos })
 
-
-reachedDbg cur dest = trace (concat ["Reached destination: p = ",
-                                     show cur,
-                                     " d = ",
-                                     show dest]) (return ())
-
-newDestDbg :: State FishState ()
-newDestDbg = do
-  d <- gets dest
-  trace ("NewDest: " ++ show d) (return ())
-
 fishTick :: State FishState ()
 fishTick = do
   spd     <- gets speed
   p@(x,y) <- gets pos
   d       <- gets dest
-  when (dist p d <= spd) (newDest >> reachedDbg p d) --get close enough
 
-  d' <- gets dest -- updated destination
-
-  let (dx,dy) = vec spd p d'
+  let (dx,dy) = vec spd p d
   trace ("dx: " ++ show dx ++ "  dy " ++ show dy) (return ())
   trace ("p: " ++ show p ++ "  d: " ++ show d) (return ())
 
- -- avoid getting stuck
-  when (dx == 0 && dy == 0) newDest
---  printIf ("dx = " ++ show dx ++ " dy = " ++ show dy) (dx < 0 || dy < 0) (return ())
---  assert "dx && dy /= 0" (dx == 0 && dy == 0) (return ())
+ -- avoid getting stuck, and get close enough
+  when ((dx == 0 && dy == 0) || (dist p d <= spd) ) newDest
   updatePos (x + dx, y + dy)
-
   updateFrame
 
 
@@ -136,8 +119,8 @@ fishTick = do
 -- result is a vector with length s
 -- with proportions depending on how far in what direction to do
 
--- | Approximate a vector of ~length d from the first point to the
--- second with a ratio depending on the distance to be traveled.
+-- | Approximate a dx/dy vector of ~length d from the first point to
+-- the second with a ratio depending on the distance to be traveled.
 vec :: Int -> Pos -> Pos -> Vec
 vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
                             b = fromIntegral (y2 - y1)
@@ -191,7 +174,6 @@ newDest = do
                     dest = (x,y)
                   } )
   setBackwards
-  newDestDbg
 
 
 --TODO: Reorganize to have a separate backwards array
@@ -276,6 +258,7 @@ main = do
             windowTitle := "Wanda",
             windowDecorated := False,
             windowTypeHint := WindowTypeHintDock, -- Dock
+            windowGravity := GravityCenter,
             windowDefaultHeight := fishHeight,
             windowDefaultWidth := fishWidth,
             windowAcceptFocus := True, -- False?
