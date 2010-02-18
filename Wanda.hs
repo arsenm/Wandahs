@@ -226,6 +226,7 @@ getScreenSize scr = liftA2 (,) (screenGetWidth scr) (screenGetHeight scr)
 fishFrames :: IO (Array Int (Pixbuf, Pixbuf))
 fishFrames = splitStrip fishCount =<< pixbufNewFromInline wandaImage
 
+createWanda :: Array Int (Pixbuf, Pixbuf) -> IO Window
 createWanda wandaFrames = do
   img <- imageNew
   widgetSetDoubleBuffered img True
@@ -267,7 +268,7 @@ createWanda wandaFrames = do
 --TODO: Update screen size changed signal
 
   winPos <- windowGetPosition win
-  newGen <- getStdGen
+  newGen <- newStdGen
   scrSize <- getScreenSize =<< widgetGetScreen win
 --iniDest <- randomIOPos
   let iniDest = (100, 100)
@@ -298,9 +299,10 @@ createWanda wandaFrames = do
 
 main = do
   initGUI
+  fr <- fishFrames
 
 -- get the stip of fish pictures and split it into an array of frames
-  createWanda =<< fishFrames
+  createWanda fr
 
   mainGUI
 
