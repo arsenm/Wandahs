@@ -66,13 +66,14 @@ invisiCairo dw = renderWithDrawable dw drawTransparent
 fishCount = 8
 fishHeight = 55
 fishWidth = 90
-defaultSpeed = 3
+defaultSpeed = 5
 
 
 frame = snd . curFrame
 frameIdx = fst . curFrame
 
 type Pos = (Int, Int)
+type Vec = (Int, Int)
 
 data FishState = FishState { pos :: !Pos,
                              dest :: !Pos,
@@ -106,19 +107,25 @@ reachedDbg cur dest = trace (concat ["Reached destination: p = ",
 newDestDbg :: State FishState ()
 newDestDbg = do
   d <- gets dest
-  trace ("Reached dest: " ++ show d) (return ())
+  trace ("NewDest: " ++ show d) (return ())
 
 fishTick :: State FishState ()
 fishTick = do
   spd     <- gets speed
   p@(x,y) <- gets pos
   d       <- gets dest
-
   when (dist p d <= spd) (newDest >> reachedDbg p d) --get close enough
 
-  let (dx,dy) = vec spd p d
+  d' <- gets dest -- updated destination
 
---  trace ("p: " ++ show p ++ "  p': " ++ show p') (return ())
+  let (dx,dy) = vec spd p d'
+  trace ("dx: " ++ show dx ++ "  dy " ++ show dy) (return ())
+  trace ("p: " ++ show p ++ "  d: " ++ show d) (return ())
+
+ -- avoid getting stuck
+  when (dx == 0 && dy == 0) newDest
+--  printIf ("dx = " ++ show dx ++ " dy = " ++ show dy) (dx < 0 || dy < 0) (return ())
+--  assert "dx && dy /= 0" (dx == 0 && dy == 0) (return ())
   updatePos (x + dx, y + dy)
 
   updateFrame
@@ -131,15 +138,38 @@ fishTick = do
 
 -- | Approximate a vector of ~length d from the first point to the
 -- second with a ratio depending on the distance to be traveled.
-vec :: Int -> (Int, Int) -> (Int, Int) -> (Int, Int)
+vec :: Int -> Pos -> Pos -> Vec
 vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
                             b = fromIntegral (y2 - y1)
-                            k = b / a
+                            k = abs (b / a)
                             s = fromIntegral d
+
                             dx = sqrt (s^2 / (1 + k^2))
-                        in (floor dx, floor $ k * dx)
+                            dy = k * dx
+
+                            ddx = if a > 0
+                                    then ceiling dx
+                                    else floor (negate dx)
+                            ddy = if b > 0
+                                     then ceiling dy
+                                     else floor (negate dy)
+
+                        in (ddx, ddy)
+--FIXME: Use floor with negative numbers?
+--FIXME: dx, dy configurable speed maybe
+--Also prevent dx dy = 0 from ever happening.
+{-
+assert :: String -> Bool -> a -> a
+assert s c v = if c
+                 then error ("Assertion failed: " ++ s)
+                 else v
 
 
+printIf :: String -> Bool -> a -> a
+printIf s c v = if c
+                  then trace ("Cond: " ++ s) v
+                  else v
+-}
 
 -- updates to a new destination and randomgen
 newDest :: State FishState ()
@@ -149,12 +179,29 @@ newDest = do
 
 --CHECKME: Screen from 0 or 1?
 --TODO: lower and upper some percent beyond limit
-  let (x, gen')  = randomR ((-10), sx + 10) gen -- TODO: Instance Random Tuple makes easier
+  let (x, gen')  = randomR ((-10), sx + 10) gen
   let (y, gen'') = randomR ((-10), sy + 10) gen'
   modify (\s -> s { rndGen = gen'',
                     dest = (x,y)
                   } )
+  setBackwards
   newDestDbg
+
+
+--TODO: Reorganize to have a separate backwards array
+setBackwards :: State FishState ()
+setBackwards = do
+  (cx, _) <- gets pos
+  (dx, _) <- gets dest
+  let bw = dx < cx
+  let acc = if bw then fst else snd
+
+  arr <- gets frames
+  i   <- gets frameIdx
+
+  modify (\s -> s { curFrame = (i, acc (arr ! i)),
+                    backwards = bw
+                  })
 
 
 fishIO :: Image -> Window -> FishState -> IO ()
