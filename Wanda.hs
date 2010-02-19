@@ -1,5 +1,5 @@
 {-# LANGUAGE ForeignFunctionInterface  #-}
-{-# OPTIONS_GHC -W -O2 -funbox-strict-fields #-}
+{-# OPTIONS_GHC -W -funbox-strict-fields #-}
 {-# CFILES wanda_image.c #-}
 
 import Graphics.Rendering.Cairo
@@ -22,7 +22,7 @@ import Foreign.Ptr
 
 import Random
 
---import System.Random.MWC
+import System.Random.MWC
 
 
 foreign import ccall "wanda_image.h &wandaimage"
