@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface, BangPatterns #-}
+{-# LANGUAGE ForeignFunctionInterface  #-}
 {-# OPTIONS_GHC -W -O2 -funbox-strict-fields #-}
 {-# CFILES wanda_image.c #-}
 
@@ -21,6 +21,8 @@ import Data.IORef
 import Foreign.Ptr
 
 import Random
+
+--import System.Random.MWC
 
 
 foreign import ccall "wanda_image.h &wandaimage"
@@ -142,11 +144,6 @@ vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
                             dx = sqrt (s^2 / (1 + k^2))
                             dy = k * dx
 
-               {-
-                            ddx = if a > 0
-                                    then ceiling dx
-                                    else floor (negate dx)
-               -}
                             ddx = if a > 0
                                     then dx
                                     else negate dx
@@ -155,6 +152,7 @@ vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
                                      else negate dy
 
                         in (round ddx, round ddy)
+
 --TODO: floor or round? ceiling?
 --TODO: Use floor with negative numbers?
 --TODO: dx, dy configurable speed maybe
@@ -353,7 +351,7 @@ main = do
 --FIXME: Still observing some moving backwards with forwards image in wanda parade
 
   createWanda fr
---  replicateM_ 10 (createWanda fr)
+--replicateM_ 100 (createWanda fr)
 
   mainGUI
 

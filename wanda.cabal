@@ -16,7 +16,8 @@ Cabal-Version: >= 1.6
 Executable wanda
   Main-Is: Wanda.hs
   pkgconfig-depends: gtk+-2.0, glib-2.0, gobject-2.0, gdk-2.0
---CC-Options: "-O3 -march=core2 -mtune=core2"
+  CC-Options: -O3 -march=core2 -mtune=core2 -maccumulate-outgoing-args
+  GHC-Options: -W -O2 -fvia-c -funbox-strict-fields
   Includes: ./wanda_image.h
   C-Sources: ./wanda_image.c
   Extensions: ForeignFunctionInterface
