@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface  #-}
+ {-# LANGUAGE ForeignFunctionInterface  #-}
 {-# OPTIONS_GHC -W -funbox-strict-fields #-}
 {-# CFILES wanda_image.c #-}
 
@@ -7,6 +7,11 @@ import qualified Graphics.Rendering.Cairo as C
 
 import Graphics.UI.Gtk
 import Graphics.UI.Gtk.Gdk.Screen
+import Graphics.UI.Gtk.Gdk.EventM
+import Control.Monad.Trans (liftIO)
+
+
+--import qualified Data.ByteString.Lazy as B
 
 import System.Glib.Attributes hiding (get)
 
@@ -16,10 +21,14 @@ import Control.Monad.State
 import Control.Applicative
 import Data.Maybe
 import Data.Array
+--import Data.Binary
+--import Data.Binary.Get
 import Data.IORef
 
 import Foreign.Ptr
 
+--import System.IO
+--import System.Random.Atmosphere
 import System.Random.Mersenne
 import System.Random.Mersenne.Pure64
 
@@ -48,15 +57,35 @@ data FishState = FishState { pos :: !Pos,
                  -- size?
                  -- maybe not?
 
+{-
 -- | Set a widget to use an RGBA colormap
 setAlpha :: (WidgetClass widget) => widget -> IO ()
 setAlpha widget = do
   screen <- widgetGetScreen widget
   colormap <- screenGetRGBAColormap screen
   maybe (return ()) (widgetSetColormap widget) colormap
-
+-}
 --setAlpha window --TODO: also call setAlpha on alpha screen change
 
+{-
+--TODO: Random.org would be funny
+newPureMTRandom :: IO PureMT
+newPureMTRandom = do
+  a <- getRandomNumbers 1 (-1000000000) (1000000000)
+  let i = fromIntegral (either error head a)
+  return (pureMT i)
+-}
+
+--TODO: Exceptions
+{-
+newPureMTSysSeed :: IO PureMT
+newPureMTSysSeed = do
+  h <- openBinaryFile "/dev/urandom" ReadMode
+  bs <- B.hGet h 8
+  let x = runGet getWord64le bs
+  hClose h
+  return (pureMT x)
+-}
 
 {-
 getMask :: Int -> Int -> IO Pixmap
@@ -86,6 +115,7 @@ splitStrip n orig = do
 --both :: (a -> b) -> (a, a) -> (b, b)
 --both f = f *** f
 
+{-
 -- | Draw the background transparently.
 invisiCairo :: (DrawableClass dw) => dw -> IO ()
 invisiCairo dw = renderWithDrawable dw drawTransparent
@@ -93,7 +123,7 @@ invisiCairo dw = renderWithDrawable dw drawTransparent
           setSourceRGBA 1.0 1.0 1.0 0.0
           setOperator OperatorSource
           paint
-
+-}
 
 fishCount = 8
 fishHeight = 55
@@ -278,6 +308,22 @@ fishFrames :: IO (Array Int Pixbuf, Array Int Pixbuf)
 fishFrames = splitStrip fishCount =<< pixbufNewFromInline wandaImage
 
 
+
+
+setClickthrough win img pb = do
+  w <- pixbufGetWidth  pb
+  h <- pixbufGetHeight pb
+
+  bm <- pixmapNew (Nothing::Maybe DrawWindow) w h (Just 1)
+
+  pixbufRenderThresholdAlpha pb bm 0 0 0 0 (-1) (-1) 1
+
+
+  widgetShapeCombineMask win (Just bm) 0 0
+  widgetInputShapeCombineMask win (Just bm) 0 0
+
+
+
 -- | Takes the (forward frames, backward frames) and creates a new wanda window
 createWanda :: (Array Int Pixbuf, Array Int Pixbuf) -> IO Window
 createWanda (bckFrames, fwdFrames) = do
@@ -288,7 +334,7 @@ createWanda (bckFrames, fwdFrames) = do
   win <- windowNew
   widgetSetAppPaintable win True
   onHide win mainQuit
-  setAlpha win
+--  setAlpha win
 
   set win [ containerChild := img,
             windowTitle := "Wanda",
@@ -313,8 +359,8 @@ createWanda (bckFrames, fwdFrames) = do
 -- FIXME: Some kind of flicker on start. Maybe start offscreen?
 
   -- The transparency needs to be redone as the window is redrawn
-  winDraw <- widgetGetDrawWindow win
-  onExpose win (\_ -> invisiCairo winDraw >> return False)
+--  winDraw <- widgetGetDrawWindow win
+--  onExpose win (\_ -> invisiCairo winDraw >> return False)
 
 --TODO: Update screen size changed signal
 
@@ -354,6 +400,10 @@ createWanda (bckFrames, fwdFrames) = do
                  fishIO img win =<< readIORef fishRef
                  return True
 
+
+  on win buttonPressEvent $
+    tryEvent $ liftIO $ putStrLn "Clicked"
+
   return win
 
 main :: IO ()
@@ -363,8 +413,8 @@ main = do
 
 --FIXME: Still observing some moving backwards with forwards image in wanda parade
 
-  createWanda fr
---replicateM_ 100 (createWanda fr)
+--createWanda fr
+  replicateM_ 100 (createWanda fr)
 
   mainGUI
 
@@ -377,4 +427,6 @@ main = do
 --pm <- pixmapNew (Nothing::Maybe DrawWindow) iw ih (Just 1)
 --widgetShapeCombineMask      win (Just pm) 0 0
 --widgetInputShapeCombineMask win (Just pm) 0 0
+
+
 
