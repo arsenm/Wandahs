@@ -96,16 +96,27 @@ getMask w h = do
 
 
 -- | Split the original image into a pair of forwards and backwards
--- facing Pixbufs arrays. Left array has left facing fishes
--- (backwards). Right array has right going fishes.
-splitStrip :: Int -> Pixbuf -> IO (Array Int Pixbuf, Array Int Pixbuf)
-splitStrip n orig = do
-  w <- pixbufGetWidth orig
-  h <- pixbufGetHeight orig
-  let iw = w `div` n
+-- facing Pixbufs arrays, scaling the image by a factor. Left array
+-- has left facing fishes (backwards). Right array has right going
+-- fishes.
+splitStrip :: Maybe Double -> Int -> Pixbuf -> IO (Array Int Pixbuf, Array Int Pixbuf)
+splitStrip scale n img = do
+  w <- pixbufGetWidth img
+  h <- pixbufGetHeight img
+
+ -- optionally scale the image. I don't just scale by a factor of 1
+ -- for Nothing since I figure that could screw things up a bit.
+  (img',w',h') <- case scale of
+                    Nothing -> return (img, w, h)
+                    Just k  -> do let ws = floor (k * fromIntegral w)
+                                      hs = floor (k * fromIntegral h)
+                                  i <- pixbufScaleSimple img ws hs InterpHyper
+                                  return (i, ws, hs)
+
+  let iw = w' `div` n
   let ps = take n $ iterate (+iw) 0
-  let split x = do l <- pixbufNewSubpixbuf orig x 0 iw h
-                   r <- pixbufFlipHorizontally l
+  let split x = do l  <- pixbufNewSubpixbuf img' x 0 iw h'
+                   r  <- pixbufFlipHorizontally l
                    return (l,r)
   let arr = listArray (0, n-1)
       both =  arr *** (arr . reverse)
@@ -304,8 +315,8 @@ getScreenSize scr = liftA2 (,) (screenGetWidth scr) (screenGetHeight scr)
 
 
 -- | Split the image up into the individual fish frames
-fishFrames :: IO (Array Int Pixbuf, Array Int Pixbuf)
-fishFrames = splitStrip fishCount =<< pixbufNewFromInline wandaImage
+fishFrames :: Maybe Double -> IO (Array Int Pixbuf, Array Int Pixbuf)
+fishFrames scale = splitStrip scale fishCount =<< pixbufNewFromInline wandaImage
 
 
 
@@ -409,12 +420,12 @@ createWanda (bckFrames, fwdFrames) = do
 main :: IO ()
 main = do
   initGUI
-  fr <- fishFrames
+  fr <- fishFrames (Just fishScale)
 
 --FIXME: Still observing some moving backwards with forwards image in wanda parade
 
---createWanda fr
-  replicateM_ 100 (createWanda fr)
+  createWanda fr
+--replicateM_ 100 (createWanda fr)
 
   mainGUI
 
