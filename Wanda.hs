@@ -20,16 +20,17 @@ import Data.IORef
 
 import Foreign.Ptr
 
-import Random
-
-import System.Random.MWC
-
+import System.Random.Mersenne
+import System.Random.Mersenne.Pure64
 
 foreign import ccall "wanda_image.h &wandaimage"
   wandaImage :: Ptr InlineImage
 
 type Pos = (Int, Int)
 type Vec = (Int, Int)
+
+--TODO: Better seeding not based off clock.
+-- with clock, seem to get wanda schools moving in same general way
 
 -- | Track the state of the fish
 data FishState = FishState { pos :: !Pos,
@@ -38,7 +39,7 @@ data FishState = FishState { pos :: !Pos,
                              frameN :: !Int,
                              backwards :: !Bool,
                              speed :: !Int,
-                             rndGen :: StdGen,
+                             rndGen :: PureMT,
                              screenSize :: !(Int,Int),
                              frames :: Array Int Pixbuf,
                              backFrames :: Array Int Pixbuf
@@ -172,13 +173,24 @@ newDest = do
   let xBnds   = (negate tx, sx + tx)
   let yBnds   = (negate ty, sy + ty)
 
-  let (x, gen')  = randomR xBnds gen
-  let (y, gen'') = randomR yBnds gen'
+  let (x, gen')  = randomIntR xBnds gen
+  let (y, gen'') = randomIntR yBnds gen'
   modify (\s -> s { rndGen = gen'',
                     dest = (x,y)
                   } )
   setBackwards
 
+
+randomIntR :: (Int, Int) -> PureMT -> (Int, PureMT)
+randomIntR (l,u) s = let n = u - l + 1
+                         (v, s') = randomInt s
+                     in (l + v `mod` n, s')
+
+randomIntRIO :: (Int, Int) -> IO Int
+randomIntRIO (l,u) = do
+  let n = u - l + 1
+  v <- randomIO
+  return (l + v `mod` n)
 
 --TODO: Reorganize to have a separate backwards array
 setBackwards :: State FishState ()
@@ -237,7 +249,7 @@ updateFrame = do
 -- | Simply select a random position on the screen
 randomIOPos :: Screen -> IO Pos
 randomIOPos scr = getScreenSize scr >>= \bnds ->
-                    liftA2 (,) (randomRIO bnds) (randomRIO bnds)
+                    liftA2 (,) (randomIntRIO bnds) (randomIntRIO bnds)
 
 
 -- | Same as randomIOPos, except limited to a small offscreen part
@@ -248,7 +260,7 @@ randomIOStart scr = do
   let xBnds = (negate tx, 0)
   let yBnds = (0, sy)
 
-  liftA2 (,) (randomRIO xBnds) (randomRIO yBnds)
+  liftA2 (,) (randomIntRIO xBnds) (randomIntRIO yBnds)
 --TODO: Probability of starting on right, but need to also set backwards
 --  let leftP = randomIO
 
@@ -308,7 +320,8 @@ createWanda (bckFrames, fwdFrames) = do
 
   scr <- widgetGetScreen win
 
-  newGen  <- newStdGen
+  newGen <- newPureMT
+
   scrSize <- getScreenSize scr
   iniPos  <- randomIOStart scr  -- random offscreen location to start from
   iniDest <- randomIOPos   scr  -- where to go from there
