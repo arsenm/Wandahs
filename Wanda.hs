@@ -39,8 +39,8 @@ type Pos = (Int, Int)
 type Vec = (Int, Int)
 type Fish = Window
 
---TODO: Better seeding not based off clock.
--- with clock, seem to get wanda schools moving in same general way
+--TODO: Better seeding not based off clock. With clock, seem to get
+-- wanda schools moving in same general way?
 
 -- | Track the state of the fish
 data FishState = FishState { dest :: !Pos,
@@ -53,7 +53,7 @@ data FishState = FishState { dest :: !Pos,
                              frames :: Array Int Pixbuf,
                              backFrames :: Array Int Pixbuf
                            }
-                 --running away?
+                 -- running away?
                  -- size?
                  -- maybe not?
 
@@ -62,6 +62,19 @@ instance Show FishState where
                     "dest = "            ++ show (dest s),
                     "curFrame = "        ++ show (curFrame s),
                     "backwards = "       ++ show (backwards s)]
+
+
+
+fishCount = 8
+fishHeight = 55
+fishWidth = 90
+defaultSpeed = 5
+fishTimeout = 100
+
+-- Unfortunately the wrong kind of scale.
+-- Fish puns for great justice.
+fishScale = Just 0.5
+
 
 
 {-
@@ -75,16 +88,15 @@ setAlpha widget = do
 --setAlpha window --TODO: also call setAlpha on alpha screen change
 
 
---TODO: Exceptions
-
-newPureMTSysSeed :: IO PureMT
-newPureMTSysSeed = do
-  h <- openBinaryFile "/dev/urandom" ReadMode
-  bs <- B.hGet h 8
-  let x = runGet getWord64le bs
-  hClose h
-  return (pureMT x)
-
+{-
+-- | Draw the background transparently.
+transparentBG :: (DrawableClass dw) => dw -> IO ()
+transparentBG dw = renderWithDrawable dw drawTransparent
+  where drawTransparent = do
+          setSourceRGBA 1.0 1.0 1.0 0.0
+          setOperator OperatorSource
+          paint
+-}
 
 -- | Split the original image into a pair of forwards and backwards
 -- facing Pixbufs arrays, scaling the image by a factor. Left array
@@ -114,31 +126,8 @@ splitStrip scale n img = do
   both . unzip <$> mapM split ps
 
 
-{-
--- | Draw the background transparently.
-transparentBG :: (DrawableClass dw) => dw -> IO ()
-transparentBG dw = renderWithDrawable dw drawTransparent
-  where drawTransparent = do
-          setSourceRGBA 1.0 1.0 1.0 0.0
-          setOperator OperatorSource
-          paint
--}
-
-fishCount = 8
-fishHeight = 55
-fishWidth = 90
-defaultSpeed = 5
-
--- Unfortunately the wrong kind of scale.
--- Fish puns for great justice.
-fishScale = Just 0.5
-
-
--- | Calculate the Cartesian distance between two points, approximated to closest integer
-dist :: Pos -> Pos -> Int
-dist (x1,y1) (x2,y2) = round . sqrt . fromIntegral $ (x1 - x2)^2 + (y1 - y2)^2
-
-
+-- | Change direction. This prevents a possible discontinuity in the
+-- animation
 swapDirection :: State FishState ()
 swapDirection = do
   i  <- gets curFrame
@@ -152,6 +141,7 @@ swapDirection = do
   modify (\s -> s { backwards = not bw,
                     curFrame  = i' })
 
+-- Fish tick? Fish stick?
 -- | Main fish state change function
 fishTick :: Pos -> State FishState Pos
 fishTick p@(x,y) = do
@@ -165,44 +155,23 @@ fishTick p@(x,y) = do
   -- Not on same side after moving, so turned around
   when ( (t < x) /= (t < x') ) swapDirection
 
-  -- avoid getting stuck, and get close enough
+  -- Avoid getting stuck, and get close enough
   when ((dx == 0 && dy == 0) || dist p' d <= spd) (newDest p')
   updateFrame
   return p'
 
+-- | Move the current frame to the next depending on the direction of
+-- travel. Backwards means fish moving right to left. Forwards is left
+-- to right.
+updateFrame :: State FishState ()
+updateFrame = do
+  i <- gets curFrame
+  n <- gets frameN
+  let i' = (i + 1) `mod` n
+  modify (\s -> s { curFrame = i' })
 
 
-
--- sqrt (dx^2 + (k * dx) ^2) = s^2
--- k = ratio of distance to travel
--- result is a vector with length s
--- with proportions depending on how far in what direction to do
-
--- | Approximate a dx/dy vector of ~length d from the first point to
--- the second with a ratio depending on the distance to be traveled.
-vec :: Int -> Pos -> Pos -> Vec
-vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
-                            b = fromIntegral (y2 - y1)
-                            k = abs (b / a)
-                            s = fromIntegral d
-
-                            dx = sqrt (s^2 / (1 + k^2))
-                            dy = k * dx
-
-                            ddx = if a > 0
-                                    then dx
-                                    else negate dx
-                            ddy = if b > 0
-                                     then dy
-                                     else negate dy
-
-                        in (round ddx, round ddy)
-
---TODO: floor or round? ceiling?
---TODO: Use floor with negative numbers?
---TODO: dx, dy configurable speed maybe
-
--- updates to a new destination and randomgen
+-- | Pick a new destination and Randomgen
 newDest :: Pos -> State FishState ()
 newDest (x,_) = do
   (sx, sy) <- gets screenSize
@@ -233,14 +202,60 @@ newDest (x,_) = do
                   } )
 
 
+-- | Calculate the Cartesian distance between two points, approximated
+-- to closest integer
+dist :: Pos -> Pos -> Int
+dist (x1,y1) (x2,y2) = round . sqrt . fromIntegral $ (x1 - x2)^2 + (y1 - y2)^2
+
+
+-- sqrt (dx^2 + (k * dx) ^2) = s^2
+-- k = ratio of distance to travel
+-- result is a vector with length s
+-- with proportions depending on how far in what direction to do
+
+-- | Approximate a dx/dy vector of ~length d from the first point to
+-- the second with a ratio depending on the distance to be traveled.
+vec :: Int -> Pos -> Pos -> Vec
+vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
+                            b = fromIntegral (y2 - y1)
+                            k = abs (b / a)
+                            s = fromIntegral d
+
+                            dx = sqrt (s^2 / (1 + k^2))
+                            dy = k * dx
+
+                            ddx = if a > 0
+                                    then dx
+                                    else negate dx
+                            ddy = if b > 0
+                                     then dy
+                                     else negate dy
+
+                        in (round ddx, round ddy)
+
+--TODO: floor or round? ceiling? negative numbers?
+--TODO: dx, dy configurable speed maybe
+
+
+
+--TODO: Exceptions
+
+newPureMTSysSeed :: IO PureMT
+newPureMTSysSeed = do
+  h <- openBinaryFile "/dev/urandom" ReadMode
+  bs <- B.hGet h 8
+  let x = runGet getWord64le bs
+  hClose h
+  return (pureMT x)
+
+
 randomIntR :: (Int, Int) -> PureMT -> (Int, PureMT)
 randomIntR (l,u) s = let n = u - l + 1
                          (v, s') = randomInt s
                      in (l + v `mod` n, s')
 
-
-move :: Window -> Pos -> IO ()
-move = uncurry . windowMove
+--CHECKME: Does it actually matter which way you move through the
+--frames with respect to travel direction
 
 -- | Read the frame from the appropriate array depending on travel
 -- direction
@@ -250,9 +265,14 @@ getFrame s = let arr = if backwards s
                          else frames s
              in arr ! curFrame s
 
+
+move :: Fish -> Pos -> IO ()
+move = uncurry . windowMove
+
+
 -- | Perform the IO needed for a fish update, i.e. move the window and
 -- update the image
-fishIO :: Image -> Window -> IORef FishState -> IO Bool
+fishIO :: Image -> Fish -> IORef FishState -> IO Bool
 fishIO img win ref = do
   r  <- windowGetPosition win
 
@@ -263,21 +283,6 @@ fishIO img win ref = do
   writeIORef ref fs'
   return True
 
-
-
---CHECKME: Does it actually matter which way you move through the
---frames with respect to travel direction
-
-
--- | Move the current frame to the next depending on the direction of
--- travel. Backwards means fish moving right to left. Forwards is left
--- to right.
-updateFrame :: State FishState ()
-updateFrame = do
-  i <- gets curFrame
-  n <- gets frameN
-  let i' = (i + 1) `mod` n
-  modify (\s -> s { curFrame = i' })
 
 -- | Simply select a random position on the screen, limited to the
 -- screen area.
@@ -301,9 +306,6 @@ randomPair :: PureMT -> (Int, Int) -> (Int, Int) -> (Pos, PureMT)
 randomPair g xBnds yBnds = let (x, g')  = randomIntR xBnds g
                                (y, g'') = randomIntR yBnds g'
                            in ((x,y), g'')
-
-
-
 
 every = flip timeoutAdd
 
@@ -397,7 +399,7 @@ createWanda (bckFrames, fwdFrames) = do
 
   fishIO img win fishRef
 
-  every 100 (fishIO img win fishRef)
+  every fishTimeout (fishIO img win fishRef)
 
   on win buttonPressEvent $
     tryEvent $ liftIO $ readIORef fishRef >>= print
