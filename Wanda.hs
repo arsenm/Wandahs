@@ -8,17 +8,17 @@ import qualified Graphics.Rendering.Cairo as C
 import Graphics.UI.Gtk
 import Graphics.UI.Gtk.Gdk.Screen
 import Graphics.UI.Gtk.Gdk.EventM
-import Control.Monad.Trans (liftIO)
-
 
 import qualified Data.ByteString.Lazy as B
 
 import System.Glib.Attributes hiding (get)
 
+import Control.Applicative
 import Control.Arrow
+import Control.Monad.Trans (liftIO)
 import Control.Monad.State
 
-import Control.Applicative
+
 import Data.Maybe
 import Data.Array
 import Data.Binary
@@ -27,13 +27,9 @@ import Data.IORef
 
 import Foreign.Ptr
 
---import System.Random.Atmosphere
+import System.IO
 import System.Random.Mersenne
 import System.Random.Mersenne.Pure64
-
-import Debug.Trace
-import System.IO
-import System.IO.Unsafe
 
 
 foreign import ccall "wanda_image.h &wandaimage"
@@ -41,6 +37,7 @@ foreign import ccall "wanda_image.h &wandaimage"
 
 type Pos = (Int, Int)
 type Vec = (Int, Int)
+type Fish = Window
 
 --TODO: Better seeding not based off clock.
 -- with clock, seem to get wanda schools moving in same general way
@@ -77,14 +74,6 @@ setAlpha widget = do
 -}
 --setAlpha window --TODO: also call setAlpha on alpha screen change
 
-{-
---TODO: Random.org would be funny
-newPureMTRandom :: IO PureMT
-newPureMTRandom = do
-  a <- getRandomNumbers 1 (-1000000000) (1000000000)
-  let i = fromIntegral (either error head a)
-  return (pureMT i)
--}
 
 --TODO: Exceptions
 
@@ -95,14 +84,6 @@ newPureMTSysSeed = do
   let x = runGet getWord64le bs
   hClose h
   return (pureMT x)
-
-
-{-
-getMask :: Int -> Int -> IO Pixmap
-getMask w h = do
-  pb <- pixmapNew (Nothing :: Maybe DrawWindow) w h (Just 1)
-  return pb
--}
 
 
 -- | Split the original image into a pair of forwards and backwards
@@ -351,7 +332,7 @@ setClickthrough win img pb = do
 
 
 -- | Takes the (forward frames, backward frames) and creates a new wanda window
-createWanda :: (Array Int Pixbuf, Array Int Pixbuf) -> IO Window
+createWanda :: (Array Int Pixbuf, Array Int Pixbuf) -> IO Fish
 createWanda (bckFrames, fwdFrames) = do
   img <- imageNew
   widgetSetDoubleBuffered img True
@@ -418,7 +399,6 @@ createWanda (bckFrames, fwdFrames) = do
 
   every 100 (fishIO img win fishRef)
 
-
   on win buttonPressEvent $
     tryEvent $ liftIO $ readIORef fishRef >>= print
 
@@ -433,11 +413,5 @@ main = do
 --replicateM_ 100 (createWanda fr)
 
   mainGUI
-
-
---pm <- pixmapNew (Just imgDraw) iw ih (Just 1)
---pm <- pixmapNew (Nothing::Maybe DrawWindow) iw ih (Just 1)
---widgetShapeCombineMask      win (Just pm) 0 0
---widgetInputShapeCombineMask win (Just pm) 0 0
 
 
