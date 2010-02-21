@@ -1,4 +1,4 @@
- {-# LANGUAGE ForeignFunctionInterface  #-}
+{-# LANGUAGE ForeignFunctionInterface, BangPatterns #-}
 {-# OPTIONS_GHC -W -funbox-strict-fields #-}
 {-# CFILES wanda_image.c #-}
 
@@ -27,10 +27,14 @@ import Data.IORef
 
 import Foreign.Ptr
 
-import System.IO
 --import System.Random.Atmosphere
 import System.Random.Mersenne
 import System.Random.Mersenne.Pure64
+
+import Debug.Trace
+import System.IO
+import System.IO.Unsafe
+
 
 foreign import ccall "wanda_image.h &wandaimage"
   wandaImage :: Ptr InlineImage
@@ -56,6 +60,13 @@ data FishState = FishState { pos :: !Pos,
                  --running away?
                  -- size?
                  -- maybe not?
+
+instance Show FishState where
+  show s = unlines ["FishState { pos = " ++ show (pos s),
+                    "dest = "            ++ show (dest s),
+                    "curFrame = "        ++ show (curFrame s),
+                    "backwards = "       ++ show (backwards s)]
+
 
 {-
 -- | Set a widget to use an RGBA colormap
@@ -152,20 +163,50 @@ updateFishState = execState fishTick
 -- | Updates a fish state with a new position
 updatePos newPos = modify (\s -> s { pos = newPos })
 
+
+swapDirection :: State FishState ()
+swapDirection = do
+  i  <- gets curFrame
+  n  <- gets frameN
+  bw <- gets backwards
+
+  let i' = n - i - 1  -- since the images are reversed, on direction change flip index
+                      -- otherwise there would be a weird jump
+                      -- n - i - 1 is same image in other direction.
+
+  modify (\s -> s { backwards = not bw,
+                    curFrame  = i' })
+
+
 -- | Main fish state change function
 fishTick :: State FishState ()
 fishTick = do
   spd     <- gets speed
   p@(x,y) <- gets pos
-  d       <- gets dest
+  d@(t,_) <- gets dest
+  bw      <- gets backwards
 
   let (dx,dy) = vec spd p d
+      x' = x + dx
+      p' = (x', y + dy)
 
- -- avoid getting stuck, and get close enough
-  when ((dx == 0 && dy == 0) || (dist p d <= spd) ) newDest
-  updatePos (x + dx, y + dy)
+  -- Not on same side after moving, so turned around
+  when ( bw /= (t <= x') ) (swapDirection >>
+                     trace ("SWAPPING: x = " ++ show x ++ " x' = " ++ show x' ++ " t = " ++ show t) return ())
+
+
+  bw <- gets backwards
+  when (dx < 0 && not bw) (error "SHIT FAILED")
+
+  updatePos p'
+  when ((dx == 0 && dy == 0) || dist p' d <= spd) newDest
   updateFrame
 
+
+
+
+
+ -- avoid getting stuck, and get close enough
 
 -- sqrt (dx^2 + (k * dx) ^2) = s^2
 -- k = ratio of distance to travel
@@ -201,29 +242,40 @@ newDest :: State FishState ()
 newDest = do
   (sx, sy) <- gets screenSize
   gen      <- gets rndGen
+  (x,_)    <- gets pos
+  oldBw    <- gets backwards
+  i        <- gets curFrame
+  n        <- gets frameN
 
   --TODO: Maybe some kind of biasing to get longer, smoother
   --paths. Sometimes can get a close by new destination and a weird
   --jerk could happen
 
   -- limits are (screen x +- 10%, screen y +- 10%)
-  let (tx,ty) = (sx `div` 10, sy `div` 10)
-  let xBnds   = (negate tx, sx + tx)
-  let yBnds   = (negate ty, sy + ty)
+  let (tx,ty)     = (sx `div` 10, sy `div` 10)
+      xBnds       = (negate tx, sx + tx)
+      yBnds       = (negate ty, sy + ty)
+      (loc, gen') = randomPair gen xBnds yBnds
 
-  let (x, gen')  = randomIntR xBnds gen
-  let (y, gen'') = randomIntR yBnds gen'
-  modify (\s -> s { rndGen = gen'',
-                    dest = (x,y)
+      bw = fst loc < x
+      i' = if oldBw == bw
+             then i
+             else n - i - 1
+
+  trace "NEWDEST" return ()
+
+  modify (\s -> s { rndGen = gen',
+                    dest = loc,
+                    backwards = bw,
+                    curFrame = i'
                   } )
-  setBackwards
+
 
 
 randomIntR :: (Int, Int) -> PureMT -> (Int, PureMT)
 randomIntR (l,u) s = let n = u - l + 1
                          (v, s') = randomInt s
                      in (l + v `mod` n, s')
-
 
 --TODO: Reorganize to have a separate backwards array
 setBackwards :: State FishState ()
@@ -259,7 +311,19 @@ getFrame s = let arr = if backwards s
 -- update the image
 fishIO :: Image -> Window -> FishState -> IO ()
 fishIO img win fs = do
+  putStrLn ""
+  r@(wx, wy) <- windowGetPosition win
+  let fsw = pos fs
+  when (r /= fsw) (putStrLn $ "BROKENBROKEN: " ++ show r ++ " /= " ++ show fsw)
+  putStrLn ""
   move win (pos fs)
+
+  r2 <- windowGetPosition win
+  if (r2 /= fsw)
+     then (putStrLn $ "Not what I wanted... " ++ show r ++ " /= " ++ show fsw)
+     else (putStrLn "SUCCESS")
+
+
   imageSetFromPixbuf img (getFrame fs)
 
 
@@ -339,14 +403,11 @@ createWanda (bckFrames, fwdFrames) = do
 
  -- Setup the window. Needs to be drawable for transparency to work.
   win <- windowNew
-  widgetSetAppPaintable win True
---  setAlpha win
-
   set win [ containerChild := img,
             windowTitle := "Wanda",
             windowDecorated := False,
             windowTypeHint := WindowTypeHintDock, -- Dock
-            windowGravity := GravityCenter,
+            windowGravity := GravityStatic,     -- Importantish.
             windowDefaultHeight := fishHeight,
             windowDefaultWidth := fishWidth,
             windowAcceptFocus := True, -- False?
@@ -355,6 +416,8 @@ createWanda (bckFrames, fwdFrames) = do
             windowSkipPagerHint := True,
             windowModal := True ]
 
+  widgetSetAppPaintable win True
+--  setAlpha win
   windowSetPosition win WinPosNone
   windowSetKeepAbove win True
   windowSetRole win "Desktop Fish"
@@ -364,9 +427,9 @@ createWanda (bckFrames, fwdFrames) = do
 
 -- FIXME: Some kind of flicker on start. Maybe start offscreen?
 
-  -- The transparency needs to be redone as the window is redrawn
---  winDraw <- widgetGetDrawWindow win
---  onExpose win (\_ -> invisiCairo winDraw >> return False)
+-- The transparency needs to be redone as the window is redrawn
+-- winDraw <- widgetGetDrawWindow win
+-- onExpose win (\_ -> invisiCairo winDraw >> return False)
 
 --TODO: Update screen size changed signal
 
@@ -378,9 +441,8 @@ createWanda (bckFrames, fwdFrames) = do
   scrSize <- getScreenSize scr
 
   let (iniPos, gen')   = randomStartPos gen  scrSize  -- random offscreen location to start from
-      (iniDest, gen'') = randomPos      gen' scrSize  -- where to go from there (not offscreen)
-      iniBw = fst iniPos > fst iniDest
-      iniFrames = if iniBw then bckFrames else fwdFrames
+      (iniDest, gen'') = randomPos      gen' (100, 100) --scrSize  -- where to go from there (not offscreen)
+      iniBw = fst iniDest < fst iniPos
 
       iniFishState = FishState { pos = iniPos,
                                  curFrame = 1,
@@ -393,9 +455,8 @@ createWanda (bckFrames, fwdFrames) = do
                                  frames = fwdFrames,
                                  backFrames = bckFrames
                                }
-  -- set initial image
-  imageSetFromPixbuf img (iniFrames ! 1)
-  move win iniPos
+  putStrLn $ "I'm a new fish. iniPos = " ++ show iniPos ++ " iniDest = " ++ show iniDest ++ " bw = " ++ show iniBw
+  fishIO img win iniFishState
 
   fishRef <- newIORef iniFishState
 
@@ -406,7 +467,7 @@ createWanda (bckFrames, fwdFrames) = do
                  return True
 
   on win buttonPressEvent $
-    tryEvent $ liftIO $ putStrLn "Clicked"
+    tryEvent $ liftIO $ readIORef fishRef >>= print
 
   return win
 
@@ -417,8 +478,9 @@ main = do
 
 --FIXME: Still observing some moving backwards with forwards image in wanda parade
 
---createWanda fr
-  replicateM_ 60 (createWanda fr)
+-- 70 seems fine
+  createWanda fr
+--replicateM_ 100 (createWanda fr)
 
   mainGUI
 
