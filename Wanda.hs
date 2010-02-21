@@ -46,8 +46,7 @@ type Vec = (Int, Int)
 -- with clock, seem to get wanda schools moving in same general way
 
 -- | Track the state of the fish
-data FishState = FishState { pos :: !Pos,
-                             dest :: !Pos,
+data FishState = FishState { dest :: !Pos,
                              curFrame :: !Int,
                              frameN :: !Int,
                              backwards :: !Bool,
@@ -62,7 +61,7 @@ data FishState = FishState { pos :: !Pos,
                  -- maybe not?
 
 instance Show FishState where
-  show s = unlines ["FishState { pos = " ++ show (pos s),
+  show s = unlines ["FishState {\n",
                     "dest = "            ++ show (dest s),
                     "curFrame = "        ++ show (curFrame s),
                     "backwards = "       ++ show (backwards s)]
@@ -147,7 +146,7 @@ transparentBG dw = renderWithDrawable dw drawTransparent
 fishCount = 8
 fishHeight = 55
 fishWidth = 90
-defaultSpeed = 10
+defaultSpeed = 5
 
 -- Unfortunately the wrong kind of scale.
 -- Fish puns for great justice.
@@ -157,11 +156,6 @@ fishScale = Just 0.5
 -- | Calculate the Cartesian distance between two points, approximated to closest integer
 dist :: Pos -> Pos -> Int
 dist (x1,y1) (x2,y2) = round . sqrt . fromIntegral $ (x1 - x2)^2 + (y1 - y2)^2
-
-updateFishState = execState fishTick
-
--- | Updates a fish state with a new position
-updatePos newPos = modify (\s -> s { pos = newPos })
 
 
 swapDirection :: State FishState ()
@@ -177,36 +171,26 @@ swapDirection = do
   modify (\s -> s { backwards = not bw,
                     curFrame  = i' })
 
-
 -- | Main fish state change function
-fishTick :: State FishState ()
-fishTick = do
+fishTick :: Pos -> State FishState Pos
+fishTick p@(x,y) = do
   spd     <- gets speed
-  p@(x,y) <- gets pos
   d@(t,_) <- gets dest
-  bw      <- gets backwards
 
   let (dx,dy) = vec spd p d
       x' = x + dx
       p' = (x', y + dy)
 
   -- Not on same side after moving, so turned around
-  when ( bw /= (t <= x') ) (swapDirection >>
-                     trace ("SWAPPING: x = " ++ show x ++ " x' = " ++ show x' ++ " t = " ++ show t) return ())
+  when ( (t < x) /= (t < x') ) swapDirection
 
-
-  bw <- gets backwards
-  when (dx < 0 && not bw) (error "SHIT FAILED")
-
-  updatePos p'
-  when ((dx == 0 && dy == 0) || dist p' d <= spd) newDest
+  -- avoid getting stuck, and get close enough
+  when ((dx == 0 && dy == 0) || dist p' d <= spd) (newDest p')
   updateFrame
+  return p'
 
 
 
-
-
- -- avoid getting stuck, and get close enough
 
 -- sqrt (dx^2 + (k * dx) ^2) = s^2
 -- k = ratio of distance to travel
@@ -238,11 +222,10 @@ vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
 --TODO: dx, dy configurable speed maybe
 
 -- updates to a new destination and randomgen
-newDest :: State FishState ()
-newDest = do
+newDest :: Pos -> State FishState ()
+newDest (x,_) = do
   (sx, sy) <- gets screenSize
   gen      <- gets rndGen
-  (x,_)    <- gets pos
   oldBw    <- gets backwards
   i        <- gets curFrame
   n        <- gets frameN
@@ -262,8 +245,6 @@ newDest = do
              then i
              else n - i - 1
 
-  trace "NEWDEST" return ()
-
   modify (\s -> s { rndGen = gen',
                     dest = loc,
                     backwards = bw,
@@ -271,30 +252,11 @@ newDest = do
                   } )
 
 
-
 randomIntR :: (Int, Int) -> PureMT -> (Int, PureMT)
 randomIntR (l,u) s = let n = u - l + 1
                          (v, s') = randomInt s
                      in (l + v `mod` n, s')
 
---TODO: Reorganize to have a separate backwards array
-setBackwards :: State FishState ()
-setBackwards = do
-  (cx, _) <- gets pos
-  (dx, _) <- gets dest
-  i <- gets curFrame
-  n <- gets frameN
-
-  oldBw <- gets backwards
-
-  let bw = dx < cx
-
-  let i' = if oldBw /= bw   -- since the images are reversed, on direction change flip index
-           then n - i - 1   -- otherwise there would be a weird jump
-           else i           -- n - i - 1 is same image in other direction.
-
-  modify (\s -> s { backwards = bw,
-                    curFrame  = i' })
 
 move :: Window -> Pos -> IO ()
 move = uncurry . windowMove
@@ -309,22 +271,16 @@ getFrame s = let arr = if backwards s
 
 -- | Perform the IO needed for a fish update, i.e. move the window and
 -- update the image
-fishIO :: Image -> Window -> FishState -> IO ()
-fishIO img win fs = do
-  putStrLn ""
-  r@(wx, wy) <- windowGetPosition win
-  let fsw = pos fs
-  when (r /= fsw) (putStrLn $ "BROKENBROKEN: " ++ show r ++ " /= " ++ show fsw)
-  putStrLn ""
-  move win (pos fs)
+fishIO :: Image -> Window -> IORef FishState -> IO Bool
+fishIO img win ref = do
+  r  <- windowGetPosition win
 
-  r2 <- windowGetPosition win
-  if (r2 /= fsw)
-     then (putStrLn $ "Not what I wanted... " ++ show r ++ " /= " ++ show fsw)
-     else (putStrLn "SUCCESS")
+  (r', fs') <- runState (fishTick r) <$> readIORef ref
 
-
-  imageSetFromPixbuf img (getFrame fs)
+  move win r'
+  imageSetFromPixbuf img (getFrame fs')
+  writeIORef ref fs'
+  return True
 
 
 
@@ -378,7 +334,6 @@ getScreenSize scr = liftA2 (,) (screenGetWidth scr) (screenGetHeight scr)
 -- | Split the image up into the individual fish frames
 fishFrames :: Maybe Double -> IO (Array Int Pixbuf, Array Int Pixbuf)
 fishFrames scale = splitStrip scale fishCount =<< pixbufNewFromInline wandaImage
-
 
 
 
@@ -441,11 +396,10 @@ createWanda (bckFrames, fwdFrames) = do
   scrSize <- getScreenSize scr
 
   let (iniPos, gen')   = randomStartPos gen  scrSize  -- random offscreen location to start from
-      (iniDest, gen'') = randomPos      gen' (100, 100) --scrSize  -- where to go from there (not offscreen)
+      (iniDest, gen'') = randomPos      gen' scrSize  -- where to go from there (not offscreen)
       iniBw = fst iniDest < fst iniPos
 
-      iniFishState = FishState { pos = iniPos,
-                                 curFrame = 1,
+  let iniFishState = FishState { curFrame = 1,
                                  frameN = fishCount,
                                  backwards = iniBw,
                                  speed = defaultSpeed,
@@ -455,16 +409,15 @@ createWanda (bckFrames, fwdFrames) = do
                                  frames = fwdFrames,
                                  backFrames = bckFrames
                                }
-  putStrLn $ "I'm a new fish. iniPos = " ++ show iniPos ++ " iniDest = " ++ show iniDest ++ " bw = " ++ show iniBw
-  fishIO img win iniFishState
+
+  move win iniPos
 
   fishRef <- newIORef iniFishState
 
--- Can I assume the position is what I set last time?  If the window
--- manager isn't respecting move, nothing will work anyways
-  every 100 $ do modifyIORef fishRef updateFishState
-                 fishIO img win =<< readIORef fishRef
-                 return True
+  fishIO img win fishRef
+
+  every 100 (fishIO img win fishRef)
+
 
   on win buttonPressEvent $
     tryEvent $ liftIO $ readIORef fishRef >>= print
@@ -476,23 +429,15 @@ main = do
   initGUI
   fr <- fishFrames fishScale
 
---FIXME: Still observing some moving backwards with forwards image in wanda parade
-
--- 70 seems fine
   createWanda fr
 --replicateM_ 100 (createWanda fr)
 
   mainGUI
 
 
--- TODO: I can't get the clip to stop clickthrough
--- without a function that needs to be bound in
--- gtk2hs
-
 --pm <- pixmapNew (Just imgDraw) iw ih (Just 1)
 --pm <- pixmapNew (Nothing::Maybe DrawWindow) iw ih (Just 1)
 --widgetShapeCombineMask      win (Just pm) 0 0
 --widgetInputShapeCombineMask win (Just pm) 0 0
-
 
 
