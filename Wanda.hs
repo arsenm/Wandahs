@@ -11,7 +11,7 @@ import Graphics.UI.Gtk.Gdk.EventM
 import Control.Monad.Trans (liftIO)
 
 
---import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString.Lazy as B
 
 import System.Glib.Attributes hiding (get)
 
@@ -21,13 +21,13 @@ import Control.Monad.State
 import Control.Applicative
 import Data.Maybe
 import Data.Array
---import Data.Binary
---import Data.Binary.Get
+import Data.Binary
+import Data.Binary.Get
 import Data.IORef
 
 import Foreign.Ptr
 
---import System.IO
+import System.IO
 --import System.Random.Atmosphere
 import System.Random.Mersenne
 import System.Random.Mersenne.Pure64
@@ -77,7 +77,7 @@ newPureMTRandom = do
 -}
 
 --TODO: Exceptions
-{-
+
 newPureMTSysSeed :: IO PureMT
 newPureMTSysSeed = do
   h <- openBinaryFile "/dev/urandom" ReadMode
@@ -85,7 +85,7 @@ newPureMTSysSeed = do
   let x = runGet getWord64le bs
   hClose h
   return (pureMT x)
--}
+
 
 {-
 getMask :: Int -> Int -> IO Pixmap
@@ -123,13 +123,10 @@ splitStrip scale n img = do
   both . unzip <$> mapM split ps
 
 
---both :: (a -> b) -> (a, a) -> (b, b)
---both f = f *** f
-
 {-
 -- | Draw the background transparently.
-invisiCairo :: (DrawableClass dw) => dw -> IO ()
-invisiCairo dw = renderWithDrawable dw drawTransparent
+transparentBG :: (DrawableClass dw) => dw -> IO ()
+transparentBG dw = renderWithDrawable dw drawTransparent
   where drawTransparent = do
           setSourceRGBA 1.0 1.0 1.0 0.0
           setOperator OperatorSource
@@ -139,11 +136,11 @@ invisiCairo dw = renderWithDrawable dw drawTransparent
 fishCount = 8
 fishHeight = 55
 fishWidth = 90
-defaultSpeed = 5
+defaultSpeed = 10
 
 -- Unfortunately the wrong kind of scale.
 -- Fish puns for great justice.
-fishScale = 0.5
+fishScale = Just 0.5
 
 
 -- | Calculate the Cartesian distance between two points, approximated to closest integer
@@ -227,11 +224,6 @@ randomIntR (l,u) s = let n = u - l + 1
                          (v, s') = randomInt s
                      in (l + v `mod` n, s')
 
-randomIntRIO :: (Int, Int) -> IO Int
-randomIntRIO (l,u) = do
-  let n = u - l + 1
-  v <- randomIO
-  return (l + v `mod` n)
 
 --TODO: Reorganize to have a separate backwards array
 setBackwards :: State FishState ()
@@ -286,24 +278,29 @@ updateFrame = do
   let i' = (i + 1) `mod` n
   modify (\s -> s { curFrame = i' })
 
+-- | Simply select a random position on the screen, limited to the
+-- screen area.
+randomPos :: PureMT -> (Int, Int) -> (Pos, PureMT)
+randomPos g (sx, sy) = randomPair g (0, sx) (0, sy)
 
--- | Simply select a random position on the screen
-randomIOPos :: Screen -> IO Pos
-randomIOPos scr = getScreenSize scr >>= \bnds ->
-                    liftA2 (,) (randomIntRIO bnds) (randomIntRIO bnds)
 
-
--- | Same as randomIOPos, except limited to a small offscreen part
-randomIOStart :: Screen -> IO Pos
-randomIOStart scr = do
-  (sx, sy) <- getScreenSize scr
-  let tx = sx `div` 10
-  let xBnds = (negate tx, 0)
-  let yBnds = (0, sy)
-
-  liftA2 (,) (randomIntRIO xBnds) (randomIntRIO yBnds)
 --TODO: Probability of starting on right, but need to also set backwards
---  let leftP = randomIO
+
+-- | Takes the bounds of the screen and produces a position off screen
+-- to start from
+randomStartPos :: PureMT -> (Int, Int) -> (Pos, PureMT)
+randomStartPos g (sx, sy) = let tx = sx `div` 10
+                                xBnds = (negate tx, 0)
+                                yBnds = (0, sy)
+                            in randomPair g xBnds yBnds
+
+
+-- | Pass two sets of bounds for the first and second
+randomPair :: PureMT -> (Int, Int) -> (Int, Int) -> (Pos, PureMT)
+randomPair g xBnds yBnds = let (x, g')  = randomIntR xBnds g
+                               (y, g'') = randomIntR yBnds g'
+                           in ((x,y), g'')
+
 
 
 
@@ -329,7 +326,6 @@ setClickthrough win img pb = do
 
   pixbufRenderThresholdAlpha pb bm 0 0 0 0 (-1) (-1) 1
 
-
   widgetShapeCombineMask win (Just bm) 0 0
   widgetInputShapeCombineMask win (Just bm) 0 0
 
@@ -344,7 +340,6 @@ createWanda (bckFrames, fwdFrames) = do
  -- Setup the window. Needs to be drawable for transparency to work.
   win <- windowNew
   widgetSetAppPaintable win True
-  onHide win mainQuit
 --  setAlpha win
 
   set win [ containerChild := img,
@@ -375,42 +370,40 @@ createWanda (bckFrames, fwdFrames) = do
 
 --TODO: Update screen size changed signal
 
+--TODO: be able to start from right / backwards
+
   scr <- widgetGetScreen win
 
-  newGen <- newPureMT
-
+  gen <- newPureMTSysSeed
   scrSize <- getScreenSize scr
-  iniPos  <- randomIOStart scr  -- random offscreen location to start from
-  iniDest <- randomIOPos   scr  -- where to go from there
 
-  --TODO: be able to start from right / backwards
+  let (iniPos, gen')   = randomStartPos gen  scrSize  -- random offscreen location to start from
+      (iniDest, gen'') = randomPos      gen' scrSize  -- where to go from there (not offscreen)
+      iniBw = fst iniPos > fst iniDest
+      iniFrames = if iniBw then bckFrames else fwdFrames
 
-  move win iniPos
-
-  let iniFishState = FishState { pos = iniPos,
+      iniFishState = FishState { pos = iniPos,
                                  curFrame = 1,
                                  frameN = fishCount,
-                                 backwards = False,
+                                 backwards = iniBw,
                                  speed = defaultSpeed,
                                  dest = iniDest,
                                  screenSize = scrSize,
-                                 rndGen = newGen,
+                                 rndGen = gen'',
                                  frames = fwdFrames,
                                  backFrames = bckFrames
                                }
   -- set initial image
-  imageSetFromPixbuf img (fwdFrames ! 1)
+  imageSetFromPixbuf img (iniFrames ! 1)
+  move win iniPos
 
---imgDraw <- widgetGetDrawWindow img
   fishRef <- newIORef iniFishState
-
 
 -- Can I assume the position is what I set last time?  If the window
 -- manager isn't respecting move, nothing will work anyways
   every 100 $ do modifyIORef fishRef updateFishState
                  fishIO img win =<< readIORef fishRef
                  return True
-
 
   on win buttonPressEvent $
     tryEvent $ liftIO $ putStrLn "Clicked"
@@ -420,12 +413,12 @@ createWanda (bckFrames, fwdFrames) = do
 main :: IO ()
 main = do
   initGUI
-  fr <- fishFrames (Just fishScale)
+  fr <- fishFrames fishScale
 
 --FIXME: Still observing some moving backwards with forwards image in wanda parade
 
-  createWanda fr
---replicateM_ 100 (createWanda fr)
+--createWanda fr
+  replicateM_ 60 (createWanda fr)
 
   mainGUI
 
