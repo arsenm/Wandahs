@@ -15,20 +15,17 @@ import System.Glib.Attributes hiding (get)
 
 import Control.Applicative
 import Control.Arrow
-import Control.Monad.Trans (liftIO)
 import Control.Monad.State
 
 
 import Data.Maybe
 import Data.Array
-import Data.Binary
 import Data.Binary.Get
 import Data.IORef
 
 import Foreign.Ptr
 
 import System.IO
-import System.Random.Mersenne
 import System.Random.Mersenne.Pure64
 
 
@@ -38,6 +35,8 @@ foreign import ccall "wanda_image.h &wandaimage"
 type Pos = (Int, Int)
 type Vec = (Int, Int)
 type Fish = Window
+type FishFrame = (Pixbuf, Bitmap)
+
 
 --TODO: Better seeding not based off clock. With clock, seem to get
 -- wanda schools moving in same general way?
@@ -50,12 +49,13 @@ data FishState = FishState { dest :: !Pos,
                              speed :: !Int,
                              rndGen :: PureMT,
                              screenSize :: !(Int,Int),
-                             frames :: Array Int Pixbuf,
-                             backFrames :: Array Int Pixbuf
+                             frames :: Array Int FishFrame,
+                             backFrames :: Array Int FishFrame
                            }
                  -- running away?
                  -- size?
                  -- maybe not?
+                 -- Speech bubble?
 
 instance Show FishState where
   show s = unlines ["FishState {\n",
@@ -73,7 +73,8 @@ fishTimeout = 100
 
 -- Unfortunately the wrong kind of scale.
 -- Fish puns for great justice.
-fishScale = Just 0.5
+--fishScale = Just 0.5
+fishScale = Nothing
 
 
 
@@ -102,7 +103,7 @@ transparentBG dw = renderWithDrawable dw drawTransparent
 -- facing Pixbufs arrays, scaling the image by a factor. Left array
 -- has left facing fishes (backwards). Right array has right going
 -- fishes.
-splitStrip :: Maybe Double -> Int -> Pixbuf -> IO (Array Int Pixbuf, Array Int Pixbuf)
+splitStrip :: Maybe Double -> Int -> Pixbuf -> IO (Array Int FishFrame, Array Int FishFrame)
 splitStrip scale n img = do
   w <- pixbufGetWidth img
   h <- pixbufGetHeight img
@@ -119,8 +120,10 @@ splitStrip scale n img = do
   let iw = w' `div` n
   let ps = take n $ iterate (+iw) 0
   let split x = do l  <- pixbufNewSubpixbuf img' x 0 iw h'
+                   lm <- getMask l
                    r  <- pixbufFlipHorizontally l
-                   return (l,r)
+                   rm <- getMask r
+                   return ((l,lm), (r, rm))
   let arr = listArray (0, n-1)
       both =  arr *** (arr . reverse)
   both . unzip <$> mapM split ps
@@ -259,7 +262,7 @@ randomIntR (l,u) s = let n = u - l + 1
 
 -- | Read the frame from the appropriate array depending on travel
 -- direction
-getFrame :: FishState -> Pixbuf
+getFrame :: FishState -> FishFrame
 getFrame s = let arr = if backwards s
                          then backFrames s
                          else frames s
@@ -279,7 +282,19 @@ fishIO img win ref = do
   (r', fs') <- runState (fishTick r) <$> readIORef ref
 
   move win r'
-  imageSetFromPixbuf img (getFrame fs')
+
+  let (fr,msk) = getFrame fs'
+
+  imageSetFromPixbuf img fr
+
+--TODO: Do I need to remove the old mask?
+--It appears I do, at least for the input shape. I get gdk CRITICAL if I don't
+-- set update clickthrough
+--  widgetShapeCombineMask win Nothing 0 0
+--  widgetShapeCombineMask win (Just msk) 0 0
+  widgetInputShapeCombineMask win Nothing    0 0
+  widgetInputShapeCombineMask win (Just msk) 0 0
+
   writeIORef ref fs'
   return True
 
@@ -315,12 +330,12 @@ getScreenSize scr = liftA2 (,) (screenGetWidth scr) (screenGetHeight scr)
 
 
 -- | Split the image up into the individual fish frames
-fishFrames :: Maybe Double -> IO (Array Int Pixbuf, Array Int Pixbuf)
+fishFrames :: Maybe Double -> IO (Array Int FishFrame, Array Int FishFrame)
 fishFrames scale = splitStrip scale fishCount =<< pixbufNewFromInline wandaImage
 
 
-
-setClickthrough win img pb = do
+getMask :: Pixbuf -> IO Bitmap
+getMask pb = do
   w <- pixbufGetWidth  pb
   h <- pixbufGetHeight pb
 
@@ -328,13 +343,12 @@ setClickthrough win img pb = do
 
   pixbufRenderThresholdAlpha pb bm 0 0 0 0 (-1) (-1) 1
 
-  widgetShapeCombineMask win (Just bm) 0 0
-  widgetInputShapeCombineMask win (Just bm) 0 0
+  return bm
 
 
 
 -- | Takes the (forward frames, backward frames) and creates a new wanda window
-createWanda :: (Array Int Pixbuf, Array Int Pixbuf) -> IO Fish
+createWanda :: (Array Int FishFrame, Array Int FishFrame) -> IO Fish
 createWanda (bckFrames, fwdFrames) = do
   img <- imageNew
   widgetSetDoubleBuffered img True
