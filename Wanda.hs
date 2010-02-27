@@ -172,7 +172,7 @@ updateCanvas = do
   win <- eventWindow
   liftIO $ do
     (w', h') <- drawableGetSize win
-    let lw = 10
+    let lw  = 10
         px  = 30   -- pointy bit
         py  = 40
         rpx = 30   -- how far back to the side for it
@@ -196,12 +196,28 @@ updateCanvas = do
           x = lw / 2
           y = lw / 2
 
+{-
+      -- start from bottom left
+      moveTo (x+w-rpx) (y+h)
+      lineTo (x+r) (y+h)
+      curveTo x (y+h) x (y+h) x (y+h-r)
+      lineTo x (y+r)
+
+      -- upper right
+      curveTo x y x y (x+r) y
+      lineTo (x+w) y
+      curveTo (x+w) y (x+w) y (x+w-(r/w))
+
+    --lineTo (x+w) (y+h-r)
+      stroke
+-}
+
       moveTo (x+r) y
       lineTo (x+w-r) y
       curveTo (x+w) y (x+w) y (x+w) (y+r)
       lineTo (x+w) (y+h-r)
   --  curveTo (x+w) (y+h) (x+w) (y+h) (x+w-r) (y+h)
-      curveTo (x+w) (y+h) (x+w) (y+h) (x+w-(r/w)) (y+h)
+      curveTo (x+w) (y+h) (x+w+(r/w)) (y+h) (x+w-(r/w)) (y+h)
 
    -- draw the pointy bit
       lineTo (x+w+px) (y+h+py)
@@ -212,6 +228,7 @@ updateCanvas = do
       curveTo x (y+h) x (y+h) x (y+h-r)
       lineTo x (y+r)
       curveTo x y x y (x+r) y
+
 
       closePath
 
