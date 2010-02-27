@@ -3,22 +3,16 @@
 {-# CFILES wanda_image.c #-}
 
 import Graphics.Rendering.Cairo
-import qualified Graphics.Rendering.Cairo as C
 
 import Graphics.UI.Gtk
-import Graphics.UI.Gtk.Gdk.Screen
 import Graphics.UI.Gtk.Gdk.EventM
 
 import qualified Data.ByteString.Lazy as B
-
-import System.Glib.Attributes hiding (get)
 
 import Control.Applicative
 import Control.Arrow
 import Control.Monad.State
 
-
-import Data.Maybe
 import Data.Array
 import Data.Binary.Get
 import Data.IORef
@@ -77,19 +71,17 @@ fishTimeout = 100
 fishScale = Nothing
 
 
-
-{-
 -- | Set a widget to use an RGBA colormap
 setAlpha :: (WidgetClass widget) => widget -> IO ()
 setAlpha widget = do
   screen <- widgetGetScreen widget
   colormap <- screenGetRGBAColormap screen
   maybe (return ()) (widgetSetColormap widget) colormap
--}
+
 --setAlpha window --TODO: also call setAlpha on alpha screen change
 
 
-{-
+
 -- | Draw the background transparently.
 transparentBG :: (DrawableClass dw) => dw -> IO ()
 transparentBG dw = renderWithDrawable dw drawTransparent
@@ -97,7 +89,7 @@ transparentBG dw = renderWithDrawable dw drawTransparent
           setSourceRGBA 1.0 1.0 1.0 0.0
           setOperator OperatorSource
           paint
--}
+
 
 -- | Split the original image into a pair of forwards and backwards
 -- facing Pixbufs arrays, scaling the image by a factor. Left array
@@ -292,8 +284,9 @@ fishIO img win ref = do
 -- set update clickthrough
 --  widgetShapeCombineMask win Nothing 0 0
 --  widgetShapeCombineMask win (Just msk) 0 0
-  widgetInputShapeCombineMask win Nothing    0 0
-  widgetInputShapeCombineMask win (Just msk) 0 0
+
+--widgetInputShapeCombineMask win Nothing    0 0
+--widgetInputShapeCombineMask win (Just msk) 0 0
 
   writeIORef ref fs'
   return True
@@ -340,9 +333,7 @@ getMask pb = do
   h <- pixbufGetHeight pb
 
   bm <- pixmapNew (Nothing::Maybe DrawWindow) w h (Just 1)
-
   pixbufRenderThresholdAlpha pb bm 0 0 0 0 (-1) (-1) 1
-
   return bm
 
 
@@ -369,19 +360,19 @@ createWanda (bckFrames, fwdFrames) = do
             windowModal := True ]
 
   widgetSetAppPaintable win True
---  setAlpha win
+  setAlpha win
   windowSetPosition win WinPosNone
   windowSetKeepAbove win True
   windowSetRole win "Desktop Fish"
---windowSetHasFrame win False
+  windowSetHasFrame win False
 
   widgetShowAll win
 
 -- FIXME: Some kind of flicker on start. Maybe start offscreen?
 
 -- The transparency needs to be redone as the window is redrawn
--- winDraw <- widgetGetDrawWindow win
--- onExpose win (\_ -> invisiCairo winDraw >> return False)
+  winDraw <- widgetGetDrawWindow win
+  onExpose win (\_ -> transparentBG winDraw >> return False)
 
 --TODO: Update screen size changed signal
 
