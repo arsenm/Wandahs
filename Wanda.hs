@@ -141,21 +141,26 @@ createSpeechBubble = do
             windowDecorated := False,
             windowTypeHint := WindowTypeHintDock, -- Dock
             windowGravity := GravityStatic,     -- Importantish.
+            windowDefaultWidth := 500,
             windowDefaultHeight := 300,
-            windowDefaultWidth := 300,
             windowAcceptFocus := True, -- False?
             windowResizable := True, -- False
             windowSkipTaskbarHint := True,
             windowSkipPagerHint := True,
             windowModal := True ]
 
+  widgetSetAppPaintable win True
   setAlpha win
+  windowSetPosition win WinPosNone
+  windowSetKeepAbove win True
+  windowSetRole win "Wanda Says"
+  windowSetHasFrame win False
   widgetShowAll win
 
   ctx <- cairoCreateContext Nothing
 
-  winDraw <- widgetGetDrawWindow win
---  onExpose win (\_ ->  >> return False)
+--winDraw <- widgetGetDrawWindow win
+--onExpose win (\_ ->  >> return False)
 
   windowMove win 300 300
 
@@ -167,8 +172,18 @@ updateCanvas = do
   win <- eventWindow
   liftIO $ do
     (w', h') <- drawableGetSize win
-    let w = (realToFrac w') / 2
-        h = (realToFrac h') / 2
+    let lw = 10
+        px  = 30   -- pointy bit
+        py  = 40
+        rpx = 30   -- how far back to the side for it
+
+        w = realToFrac w' - 2 * lw - px
+        h = realToFrac h' - 2 * lw - py
+
+
+
+
+    print (w,h)
 
     renderWithDrawable win $ do
       setSourceRGBA 0.8 0.8 1 0.85
@@ -176,10 +191,11 @@ updateCanvas = do
       paint
 
       setSourceRGB 0 0 0
-      setLineWidth 10
+      setLineWidth lw
       setLineCap LineCapRound
       setLineJoin LineJoinRound
 
+{-
       let x = 10
           y = 10
           rx = 30
@@ -208,16 +224,14 @@ updateCanvas = do
       closePath
 
       stroke
+-}
 
 
 
-{-
       let x = 10
           y = 10
           r = 30
-{-
 
-      let r = 5
           rw = w - r
           rh = h - r
           x0 = x + r / 2
@@ -226,6 +240,7 @@ updateCanvas = do
           x1 = x0 + rw
           y1 = y0 + rh
 
+      {-
       moveTo x0 ((y0 + y1) /2)
       curveTo x0 y0 x0 y0 ((x0 + x1)/2) y0
       curveTo x1 y0 x1 y0 x1 ((y0 + y1)/2)
@@ -235,15 +250,16 @@ updateCanvas = do
       --moveTo 10 20
 
       closePath
--}
+      -}
+
       --arc 10 20 10 (d2r 0) (d2r 270)
       --curveTo 10 20
       --lineTo (w - 10) 20
 
 
---      lineTo w h
+    --lineTo w h
 
---   rectangle 1 1 (w - 10) (h - 10)
+    --rectangle 1 1 (w - 10) (h - 10)
 
 
       moveTo (x+r) y
@@ -254,19 +270,23 @@ updateCanvas = do
       curveTo (x+w) (y+h) (x+w) (y+h) (x+w-(r/w)) (y+h)
 
    -- draw the pointy bit
-      lineTo (x+w+30) (y+h+40)
-      lineTo (x+w-50) (y+h)
+      lineTo (x+w+px) (y+h+py)
+      lineTo (x+w-rpx) (y+h)
 
       lineTo (x+r) (y+h)
       curveTo x (y+h) x (y+h) x (y+h-r)
       lineTo x (y+r)
       curveTo x y x y (x+r) y
 
-      stroke
+      strokePreserve
+
+      setSourceRGBA 1 0.6 0.9 0.85
+      fill
+      --strokePreserve
 
       --setSourceRGBA 1 0 0 0.7
       --fill
--}
+
   return True
 
 
