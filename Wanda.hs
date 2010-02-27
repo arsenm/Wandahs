@@ -180,10 +180,7 @@ updateCanvas = do
         w = realToFrac w' - 2 * lw - px
         h = realToFrac h' - 2 * lw - py
 
-
-
-
-    print (w,h)
+        --tx = 0.1 * w + x
 
     renderWithDrawable win $ do
       setSourceRGBA 0.8 0.8 1 0.85
@@ -195,82 +192,20 @@ updateCanvas = do
       setLineCap LineCapRound
       setLineJoin LineJoinRound
 
-{-
-      let x = 10
-          y = 10
-          rx = 30
-          ry = 30
-
-      let rx' = if rx > w - rx
-                  then w / 2
-                  else rx
-          ry' = if ry > h -ry
-                   then h / 2
-                   else ry
-          arcToBezier = 0.55228475
-          c1 = arcToBezier * rx
-          c2 = arcToBezier * ry
-
-      newPath
-      moveTo (x + rx) y
-      relLineTo (w - 2*rx) 0
-      relCurveTo c1 0 rx c2 rx ry
-      relLineTo 0 (h - 2*ry)
-      relCurveTo 0 c2 (c1 - rx) ry (-rx) ry
-      relLineTo (-w + 2 * rx) 0
-      relCurveTo (-c1) 0 (-rx) (-c2) (-rx) (-ry)
-      relLineTo 0 ((-h) + 2 * ry)
-      relCurveTo 0 (-c2) (rx - c1) (-ry) rx (-ry)
-      closePath
-
-      stroke
--}
-
-
-
-      let x = 10
-          y = 10
-          r = 30
-
-          rw = w - r
-          rh = h - r
-          x0 = x + r / 2
-          y0 = x + r / 2
-
-          x1 = x0 + rw
-          y1 = y0 + rh
-
-      {-
-      moveTo x0 ((y0 + y1) /2)
-      curveTo x0 y0 x0 y0 ((x0 + x1)/2) y0
-      curveTo x1 y0 x1 y0 x1 ((y0 + y1)/2)
-      curveTo x1 y1 x1 y1 ((x1 + x0)/2) y1
-      curveTo x0 y1 x0 y1 x0 ((y0 + y1)/2)
-
-      --moveTo 10 20
-
-      closePath
-      -}
-
-      --arc 10 20 10 (d2r 0) (d2r 270)
-      --curveTo 10 20
-      --lineTo (w - 10) 20
-
-
-    --lineTo w h
-
-    --rectangle 1 1 (w - 10) (h - 10)
-
+      let r = 40
+          x = lw / 2
+          y = lw / 2
 
       moveTo (x+r) y
       lineTo (x+w-r) y
       curveTo (x+w) y (x+w) y (x+w) (y+r)
       lineTo (x+w) (y+h-r)
---      curveTo (x+w) (y+h) (x+w) (y+h) (x+w-r) (y+h)
+  --  curveTo (x+w) (y+h) (x+w) (y+h) (x+w-r) (y+h)
       curveTo (x+w) (y+h) (x+w) (y+h) (x+w-(r/w)) (y+h)
 
    -- draw the pointy bit
       lineTo (x+w+px) (y+h+py)
+
       lineTo (x+w-rpx) (y+h)
 
       lineTo (x+r) (y+h)
@@ -278,14 +213,12 @@ updateCanvas = do
       lineTo x (y+r)
       curveTo x y x y (x+r) y
 
+      closePath
+
       strokePreserve
 
       setSourceRGBA 1 0.6 0.9 0.85
       fill
-      --strokePreserve
-
-      --setSourceRGBA 1 0 0 0.7
-      --fill
 
   return True
 
