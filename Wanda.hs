@@ -172,9 +172,9 @@ updateCanvas = do
   win <- eventWindow
   liftIO $ do
     (w', h') <- drawableGetSize win
-    let lw  = 10
-        px  = 30   -- pointy bit
-        py  = 40
+    let lw  = 0
+        px  = 40   -- pointy bit
+        py  = 50
         rpx = 30   -- how far back to the side for it
 
         w = realToFrac w' - 2 * lw - px
@@ -185,8 +185,8 @@ updateCanvas = do
     renderWithDrawable win $ do
       setSourceRGBA 0.8 0.8 1 0.85
       setOperator OperatorSource
-      paint
 
+      -- draw the border
       setSourceRGB 0 0 0
       setLineWidth lw
       setLineCap LineCapRound
@@ -196,46 +196,36 @@ updateCanvas = do
           x = lw / 2
           y = lw / 2
 
-{-
+
       -- start from bottom left
       moveTo (x+w-rpx) (y+h)
       lineTo (x+r) (y+h)
       curveTo x (y+h) x (y+h) x (y+h-r)
       lineTo x (y+r)
 
-      -- upper right
+      -- upper left
       curveTo x y x y (x+r) y
-      lineTo (x+w) y
-      curveTo (x+w) y (x+w) y (x+w-(r/w))
-
-    --lineTo (x+w) (y+h-r)
-      stroke
--}
-
-      moveTo (x+r) y
       lineTo (x+w-r) y
       curveTo (x+w) y (x+w) y (x+w) (y+r)
-      lineTo (x+w) (y+h-r)
-  --  curveTo (x+w) (y+h) (x+w) (y+h) (x+w-r) (y+h)
-      curveTo (x+w) (y+h) (x+w+(r/w)) (y+h) (x+w-(r/w)) (y+h)
 
-   -- draw the pointy bit
+      lineTo (x+w) (y+h - (py/3))
       lineTo (x+w+px) (y+h+py)
-
-      lineTo (x+w-rpx) (y+h)
-
-      lineTo (x+r) (y+h)
-      curveTo x (y+h) x (y+h) x (y+h-r)
-      lineTo x (y+r)
-      curveTo x y x y (x+r) y
-
 
       closePath
 
-      strokePreserve
-
       setSourceRGBA 1 0.6 0.9 0.85
       fill
+
+      -- draw the text
+      setSourceRGB 0.1 0.1 0.1
+      selectFontFace "sans" FontSlantNormal FontWeightBold
+      setFontSize 12
+
+      moveTo (x + 0.1 * w) (y + h / 2)
+      showText "arstarstarst"
+
+
+
 
   return True
 
