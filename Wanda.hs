@@ -65,16 +65,17 @@ data FishOpts = FishOpts { optScale :: Maybe Double,
                            optIniSpeed :: Int,
                            optFastSpeed :: Int,
                            optDisplayMessage :: Bool,
-                           optNumFish :: Int
+                           optNumFish :: Int,
+                           optTimeout :: Int
                          } deriving (Eq, Show)
 
 
 fishCount = 8
 fishHeight = 55
 fishWidth = 90
-defaultSpeed = 5
-fishTimeout = 100
 
+defaultSpeed = 5
+defaultTimeout = 100
 -- Unfortunately the wrong kind of scale.
 -- Fish puns for great justice.
 --fishScale = Just 0.5
@@ -86,7 +87,8 @@ defaultOptions = FishOpts { optScale = Nothing,
                             optIniSpeed = defaultSpeed,
                             optFastSpeed = 2 * defaultSpeed,
                             optDisplayMessage = False,
-                            optNumFish = 1
+                            optNumFish = 1,
+                            optTimeout = 100
                           }
 
 
@@ -99,7 +101,6 @@ options =
     (OptArg (\str opts -> opts { optNumFish = maybe 1 read str } ) "Fish count")
     "Number of fish to start"
 
-
   , Option ['s']     ["scale"]
     (OptArg (\str opts -> opts { optScale = read <$> str } ) "scale factor")
     "Scale the fish"
@@ -107,6 +108,10 @@ options =
   , Option ['v']     ["velocity"]
     (OptArg (\str opts -> opts { optIniSpeed = maybe defaultSpeed read str } ) "normal speed")
     "Normal speed"
+
+  , Option ['t']     ["timeout"]
+    (OptArg (\str opts -> opts { optTimeout = maybe defaultTimeout read str } ) "Update interval")
+    "Update interval"
 
   , Option ['f']     ["fast-velocity"]
     (OptArg (\str opts -> opts { optIniSpeed = maybe (2*defaultSpeed) read str } ) "Running speed")
@@ -133,7 +138,6 @@ setAlpha widget = do
   maybe (return ()) (widgetSetColormap widget) colormap
 
 --setAlpha window --TODO: also call setAlpha on alpha screen change
-
 
 
 -- | Draw the background transparently.
@@ -393,8 +397,8 @@ getMask pb = do
 
 
 -- | Takes the (forward frames, backward frames) and creates a new wanda window
-createWanda :: (Array Int FishFrame, Array Int FishFrame) -> IO Fish
-createWanda (bckFrames, fwdFrames) = do
+createWanda :: FishOpts -> (Array Int FishFrame, Array Int FishFrame) -> IO Fish
+createWanda o (bckFrames, fwdFrames) = do
   img <- imageNew
   widgetSetDoubleBuffered img True
 
@@ -458,7 +462,7 @@ createWanda (bckFrames, fwdFrames) = do
 
   fishIO img win fishRef
 
-  every fishTimeout (fishIO img win fishRef)
+  every (optTimeout o) (fishIO img win fishRef)
 
   on win buttonPressEvent $
     tryEvent $ liftIO $ readIORef fishRef >>= print
@@ -472,9 +476,7 @@ main = do
   o  <- wandaOpts
   fr <- fishFrames (optScale o)
 
-  replicateM_ (optNumFish o) (createWanda fr)
+  replicateM_ (optNumFish o) (createWanda o fr)
 
   mainGUI
-
-
 
