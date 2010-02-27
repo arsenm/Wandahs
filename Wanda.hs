@@ -178,7 +178,6 @@ createSpeechBubble = do
   widgetShowAll win
 
 
-
   ctx <- cairoCreateContext Nothing
 
 --winDraw <- widgetGetDrawWindow win
@@ -186,11 +185,12 @@ createSpeechBubble = do
 
   windowMove win 300 300
 
-  win `on` exposeEvent $ updateCanvas
+  win `on` exposeEvent $ updateCanvas ls
 
   return win
 
-updateCanvas = do
+
+updateCanvas ls = do
   win <- eventWindow
   liftIO $ do
     (w', h') <- (realToFrac *** realToFrac) <$> drawableGetSize win
@@ -246,11 +246,10 @@ updateCanvas = do
       selectFontFace "sans" FontSlantNormal FontWeightBold
       setFontSize 12
 
-      moveTo (x + 0.1 * w) (y + h / 2)
-      showText "arstarstarst"
-
-
-
+   -- FIXME: Midpoint of font, better way of doing lines
+      let xt   = x + 0.05 * w + 10
+          yt n = (15 * n) + y + 0.05 * h + 10
+      foldM_ (\n l -> moveTo xt (yt n) >> showText l >> return (n+1)) 0 ls
 
   return True
 
