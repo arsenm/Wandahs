@@ -19,7 +19,10 @@ import Data.IORef
 
 import Foreign.Ptr
 
+import Data.Ord (comparing)
+import Data.List (maximumBy)
 import System.IO
+import System.Process (readProcess)
 import System.Environment (getArgs, getProgName)
 import System.Random.Mersenne.Pure64
 import System.Console.GetOpt
@@ -135,14 +138,31 @@ wandaOpts = do
 d2r = (* (pi / 180))
 
 
+createSpeechBubble :: IO Window
 createSpeechBubble = do
+  -- Wanda speaks. Figure out the size of the window from the size of
+  -- the text.
+  txt <- readProcess "fortune" [] ""
+  let ls = lines txt
+      cw = length $ maximumBy (comparing length) ls
+      ch = length ls
+
+      -- Need character counts to pixels. TODO: Better way based on font
+
+      ww = floor $ 100 + 1.25 * 5 * fromIntegral cw
+      wh = floor $ 100 + 1.25 * 5 * fromIntegral ch
+
+  putStrLn txt
+  print (ww,wh)
+
+
   win <- windowNew
   set win [ windowTitle := "Bubble",
             windowDecorated := False,
             windowTypeHint := WindowTypeHintDock, -- Dock
             windowGravity := GravityStatic,     -- Importantish.
-            windowDefaultWidth := 500,
-            windowDefaultHeight := 300,
+            windowDefaultWidth := ww,
+            windowDefaultHeight := wh,
             windowAcceptFocus := True, -- False?
             windowResizable := True, -- False
             windowSkipTaskbarHint := True,
@@ -156,6 +176,8 @@ createSpeechBubble = do
   windowSetRole win "Wanda Says"
   windowSetHasFrame win False
   widgetShowAll win
+
+
 
   ctx <- cairoCreateContext Nothing
 
@@ -171,14 +193,15 @@ createSpeechBubble = do
 updateCanvas = do
   win <- eventWindow
   liftIO $ do
-    (w', h') <- drawableGetSize win
+    (w', h') <- (realToFrac *** realToFrac) <$> drawableGetSize win
     let lw  = 0
-        px  = 40   -- pointy bit
-        py  = 50
-        rpx = 30   -- how far back to the side for it
+        w = w' - 2 * lw - px
+        h = h' - 2 * lw - py
 
-        w = realToFrac w' - 2 * lw - px
-        h = realToFrac h' - 2 * lw - py
+    --TODO: Figure out something better for this
+        px  = w' / 5   -- pointy bit
+        py  = h' / 5
+        rpx = w' / 10   -- how far back to the side for it
 
         --tx = 0.1 * w + x
 
@@ -208,7 +231,9 @@ updateCanvas = do
       lineTo (x+w-r) y
       curveTo (x+w) y (x+w) y (x+w) (y+r)
 
-      lineTo (x+w) (y+h - (py/3))
+ --FIXME
+      -- pointy bit
+      lineTo (x+w) (y+h - (h/4))
       lineTo (x+w+px) (y+h+py)
 
       closePath
