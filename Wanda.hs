@@ -20,7 +20,9 @@ import Data.IORef
 import Foreign.Ptr
 
 import System.IO
+import System.Environment (getArgs, getProgName)
 import System.Random.Mersenne.Pure64
+import System.Console.GetOpt
 
 
 foreign import ccall "wanda_image.h &wandaimage"
@@ -51,12 +53,20 @@ data FishState = FishState { dest :: !Pos,
                  -- maybe not?
                  -- Speech bubble?
 
+
 instance Show FishState where
   show s = unlines ["FishState {\n",
                     "dest = "            ++ show (dest s),
                     "curFrame = "        ++ show (curFrame s),
                     "backwards = "       ++ show (backwards s)]
 
+
+data FishOpts = FishOpts { optScale :: Maybe Double,
+                           optIniSpeed :: Int,
+                           optFastSpeed :: Int,
+                           optDisplayMessage :: Bool,
+                           optNumFish :: Int
+                         } deriving (Eq, Show)
 
 
 fishCount = 8
@@ -68,7 +78,51 @@ fishTimeout = 100
 -- Unfortunately the wrong kind of scale.
 -- Fish puns for great justice.
 --fishScale = Just 0.5
-fishScale = Nothing
+--fishScale = Nothing
+
+
+defaultOptions :: FishOpts
+defaultOptions = FishOpts { optScale = Nothing,
+                            optIniSpeed = defaultSpeed,
+                            optFastSpeed = 2 * defaultSpeed,
+                            optDisplayMessage = False,
+                            optNumFish = 1
+                          }
+
+
+options :: [OptDescr (FishOpts -> FishOpts)]
+options =
+  [ Option ['m']     ["display-message"]
+    (NoArg (\opts -> opts { optDisplayMessage = True })) "Don't run, give fortunes."
+
+  , Option ['n']     ["number"]
+    (OptArg (\str opts -> opts { optNumFish = maybe 1 read str } ) "Fish count")
+    "Number of fish to start"
+
+
+  , Option ['s']     ["scale"]
+    (OptArg (\str opts -> opts { optScale = read <$> str } ) "scale factor")
+    "Scale the fish"
+
+  , Option ['v']     ["velocity"]
+    (OptArg (\str opts -> opts { optIniSpeed = maybe defaultSpeed read str } ) "normal speed")
+    "Normal speed"
+
+  , Option ['f']     ["fast-velocity"]
+    (OptArg (\str opts -> opts { optIniSpeed = maybe (2*defaultSpeed) read str } ) "Running speed")
+    "Running away speed"
+
+  ]
+
+wandaOpts :: IO FishOpts
+wandaOpts = do
+  argv <- getArgs
+  pn <- getProgName
+  case getOpt Permute options argv of
+    (o, [], [])  -> return (foldl (flip id) defaultOptions o)
+    (_, n, [])    -> ioError (userError ("Unknown options: " ++ unwords n))
+    (_, _, errs) -> ioError (userError (concat errs ++ usageInfo header options))
+      where header = "Usage: " ++ pn ++ " [OPTION...] files..."
 
 
 -- | Set a widget to use an RGBA colormap
@@ -411,14 +465,16 @@ createWanda (bckFrames, fwdFrames) = do
 
   return win
 
+
 main :: IO ()
 main = do
   initGUI
-  fr <- fishFrames fishScale
+  o  <- wandaOpts
+  fr <- fishFrames (optScale o)
 
-  createWanda fr
---replicateM_ 100 (createWanda fr)
+  replicateM_ (optNumFish o) (createWanda fr)
 
   mainGUI
+
 
 
