@@ -141,8 +141,8 @@ d2r = (* (pi / 180))
 createSpeechBubble :: IO Window
 createSpeechBubble = do
   -- Wanda speaks. Figure out the size of the window from the size of
-  -- the text.
-  txt <- readProcess "fortune" [] ""
+  -- the text, and remove tabs. They make showText unhappy.
+  txt <- t2s <$> readProcess "fortune" [] ""
   let ls = lines txt
       cw = length $ maximumBy (comparing length) ls
       ch = length ls
@@ -157,7 +157,7 @@ createSpeechBubble = do
 
 
   win <- windowNew
-  set win [ windowTitle := "Bubble",
+  set win [ windowTitle := "Wanda the Fish Says",
             windowDecorated := False,
             windowTypeHint := WindowTypeHintDock, -- Dock
             windowGravity := GravityStatic,     -- Importantish.
@@ -188,6 +188,11 @@ createSpeechBubble = do
   win `on` exposeEvent $ updateCanvas ls
 
   return win
+
+-- | Substitute tabs with 8 spaces in a string
+t2s ""        = ""
+t2s ('\t':cs) = "        " ++ t2s cs
+t2s (c:cs)    = c:t2s cs
 
 
 updateCanvas ls = do
@@ -246,6 +251,7 @@ updateCanvas ls = do
       selectFontFace "sans" FontSlantNormal FontWeightBold
       setFontSize 12
 
+   -- TODO: Remove tabs, they make unhappy
    -- FIXME: Midpoint of font, better way of doing lines
       let xt   = x + 0.05 * w + 10
           yt n = (15 * n) + y + 0.05 * h + 10
