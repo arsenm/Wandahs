@@ -149,14 +149,20 @@ createSpeechBubble = do
 
   setFont lay
 
-  lol@(PangoRectangle x y w h,_) <- layoutGetExtents lay
+  lol@(PangoRectangle x y w' h',_) <- layoutGetExtents lay
   print lol
 
   --TODO: Some inconsistency with the pointy bit and stretching
   --extra space for the pointy bit, plus padding
-  let ww = floor $ 1.4 * (w-x)
-      wh = floor $ 2 * (h-y)
+  let w = w' - x
+      h = h' - y
+      ww = floor $ 4 * w / 3
+      wh = floor $ 8 * h / 5
 
+      xoff = w / 20
+      yoff = h / 5
+
+  --TODO: Better offset and such
 
   putStrLn txt
   print (ww,wh)
@@ -191,7 +197,7 @@ createSpeechBubble = do
 
   windowMove win 300 300
 
-  win `on` exposeEvent $ updateCanvas lay
+  win `on` exposeEvent $ updateCanvas lay xoff yoff
 
   return win
 
@@ -205,8 +211,8 @@ setFont lay = do
   fontDescriptionSetWeight fd WeightBold
   layoutSetFontDescription lay (Just fd)
 
-
-updateCanvas lay = do
+-- layout, x and y offsets to put the layout on the bubble
+updateCanvas lay xoff yoff = do
   win <- eventWindow
   liftIO $ do
     (w', h') <- (realToFrac *** realToFrac) <$> drawableGetSize win
@@ -215,7 +221,7 @@ updateCanvas lay = do
         h = h' - 2 * lw - py
 
     --TODO: Figure out something better for this
-        px  = w' / 5   -- pointy bit
+        px  = w' / 6   -- pointy bit
         py  = h' / 5
         rpx = w' / 10   -- how far back to the side for it
 
@@ -258,9 +264,7 @@ updateCanvas lay = do
       -- Set color, and draw the text
       setSourceRGB 0.1 0.1 0.1
 
-      let xt = x + w / 20
-          yt = y + h / 4
-      moveTo xt yt
+      moveTo (x+xoff) (y+yoff)
       showLayout lay
 
   return True
