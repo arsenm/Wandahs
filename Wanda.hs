@@ -211,8 +211,19 @@ updateCanvas ls = do
         --tx = 0.1 * w + x
 
     renderWithDrawable win $ do
+      -- fill the bubble background
       setSourceRGBA 0.8 0.8 1 0.85
       setOperator OperatorSource
+
+      -- Select the font for the text, so its size can be determined.
+      -- From this, we can calculate the size to use for the bubble to
+      -- match.
+      selectFontFace "monospace" FontSlantNormal FontWeightBold
+      setFontSize 12
+
+      (fw, fh) <- (fontExtentsMaxXadvance &&& fontExtentsHeight) <$> fontExtents
+      liftIO $ putStr "fontW, fontH: " >> print (fw, fh)
+
 
       -- draw the border
       setSourceRGB 0 0 0
@@ -223,7 +234,6 @@ updateCanvas ls = do
       let r = 40
           x = lw / 2
           y = lw / 2
-
 
       -- start from bottom left
       moveTo (x+w-rpx) (y+h)
@@ -246,15 +256,14 @@ updateCanvas ls = do
       setSourceRGBA 1 0.6 0.9 0.85
       fill
 
-      -- draw the text
+      -- Set color, and draw the text
       setSourceRGB 0.1 0.1 0.1
-      selectFontFace "sans" FontSlantNormal FontWeightBold
-      setFontSize 12
 
-   -- TODO: Remove tabs, they make unhappy
    -- FIXME: Midpoint of font, better way of doing lines
       let xt   = x + 0.05 * w + 10
           yt n = (15 * n) + y + 0.05 * h + 10
+      --moveTo xt (yt 1)
+      --mapM_ (\l -> textPath l >> stroke) ls
       foldM_ (\n l -> moveTo xt (yt n) >> showText l >> return (n+1)) 0 ls
 
   return True
