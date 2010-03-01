@@ -19,8 +19,6 @@ import Data.IORef
 
 import Foreign.Ptr
 
-import Data.Ord (comparing)
-import Data.List (maximumBy)
 import System.IO
 import System.Process (readProcess)
 import System.Environment (getArgs, getProgName)
@@ -134,10 +132,6 @@ wandaOpts = do
 
 
 
-
-d2r = (* (pi / 180))
-
-
 createSpeechBubble :: IO Window
 createSpeechBubble = do
   -- Wanda speaks. Figure out the size of the window from the size.
@@ -145,28 +139,25 @@ createSpeechBubble = do
 
   pctx <- cairoCreateContext Nothing
   lay  <- layoutText pctx txt
-  layoutGetWidth lay >>= print
 
   setFont lay
 
-  lol@(PangoRectangle x y w' h',_) <- layoutGetExtents lay
-  print lol
+  (PangoRectangle x y w' h',_) <- layoutGetExtents lay
+  lc <- layoutGetLineCount lay
 
   --TODO: Some inconsistency with the pointy bit and stretching
   --extra space for the pointy bit, plus padding
   let w = w' - x
       h = h' - y
-      ww = floor $ 4 * w / 3
-      wh = floor $ 8 * h / 5
 
       xoff = w / 20
-      yoff = h / 5
+      yoff = 2 * (h / fromIntegral lc) -- 2 lines of padding
 
-  --TODO: Better offset and such
+      ww = floor $ 1.2 * w + (w / 6) -- w / 6 is px
+      wh = floor $ h + (2 * yoff) + (h / 5) -- h / 5 is py
 
   putStrLn txt
   print (ww,wh)
-
 
   win <- windowNew
   set win [ windowTitle := "Wanda the Fish Says",
@@ -189,30 +180,21 @@ createSpeechBubble = do
   windowSetHasFrame win False
   widgetShowAll win
 
-
-  ctx <- cairoCreateContext Nothing
-
---winDraw <- widgetGetDrawWindow win
---onExpose win (\_ ->  >> return False)
-
   windowMove win 300 300
 
-  win `on` exposeEvent $ updateCanvas lay xoff yoff
+  win `on` exposeEvent $ drawSpeech lay xoff yoff
 
   return win
 
--- | Substitute tabs with 8 spaces in a string
-t2s ""        = ""
-t2s ('\t':cs) = "        " ++ t2s cs
-t2s (c:cs)    = c:t2s cs
-
+setFont :: PangoLayout -> IO ()
 setFont lay = do
   fd <- fontDescriptionFromString "sans monospace 12"
   fontDescriptionSetWeight fd WeightBold
   layoutSetFontDescription lay (Just fd)
 
 -- layout, x and y offsets to put the layout on the bubble
-updateCanvas lay xoff yoff = do
+drawSpeech :: PangoLayout -> Double -> Double -> EventM EExpose Bool
+drawSpeech lay xoff yoff = do
   win <- eventWindow
   liftIO $ do
     (w', h') <- (realToFrac *** realToFrac) <$> drawableGetSize win
