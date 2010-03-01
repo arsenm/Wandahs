@@ -140,17 +140,23 @@ d2r = (* (pi / 180))
 
 createSpeechBubble :: IO Window
 createSpeechBubble = do
-  -- Wanda speaks. Figure out the size of the window from the size of
-  -- the text, and remove tabs. They make showText unhappy.
-  txt <- t2s <$> readProcess "fortune" [] ""
-  let ls = lines txt
-      cw = length $ maximumBy (comparing length) ls
-      ch = length ls
+  -- Wanda speaks. Figure out the size of the window from the size.
+  txt <- readProcess "fortune" [] ""
 
-      -- Need character counts to pixels. TODO: Better way based on font
+  pctx <- cairoCreateContext Nothing
+  lay  <- layoutText pctx txt
+  layoutGetWidth lay >>= print
 
-      ww = floor $ 100 + 1.25 * 5 * fromIntegral cw
-      wh = floor $ 100 + 1.25 * 5 * fromIntegral ch
+  setFont lay
+
+  lol@(PangoRectangle x y w h,_) <- layoutGetExtents lay
+  print lol
+
+  --TODO: Some inconsistency with the pointy bit and stretching
+  --extra space for the pointy bit, plus padding
+  let ww = floor $ 1.4 * (w-x)
+      wh = floor $ 2 * (h-y)
+
 
   putStrLn txt
   print (ww,wh)
@@ -185,7 +191,7 @@ createSpeechBubble = do
 
   windowMove win 300 300
 
-  win `on` exposeEvent $ updateCanvas ls
+  win `on` exposeEvent $ updateCanvas lay
 
   return win
 
@@ -194,8 +200,13 @@ t2s ""        = ""
 t2s ('\t':cs) = "        " ++ t2s cs
 t2s (c:cs)    = c:t2s cs
 
+setFont lay = do
+  fd <- fontDescriptionFromString "sans monospace 12"
+  fontDescriptionSetWeight fd WeightBold
+  layoutSetFontDescription lay (Just fd)
 
-updateCanvas ls = do
+
+updateCanvas lay = do
   win <- eventWindow
   liftIO $ do
     (w', h') <- (realToFrac *** realToFrac) <$> drawableGetSize win
@@ -208,22 +219,10 @@ updateCanvas ls = do
         py  = h' / 5
         rpx = w' / 10   -- how far back to the side for it
 
-        --tx = 0.1 * w + x
-
     renderWithDrawable win $ do
       -- fill the bubble background
       setSourceRGBA 0.8 0.8 1 0.85
       setOperator OperatorSource
-
-      -- Select the font for the text, so its size can be determined.
-      -- From this, we can calculate the size to use for the bubble to
-      -- match.
-      selectFontFace "monospace" FontSlantNormal FontWeightBold
-      setFontSize 12
-
-      (fw, fh) <- (fontExtentsMaxXadvance &&& fontExtentsHeight) <$> fontExtents
-      liftIO $ putStr "fontW, fontH: " >> print (fw, fh)
-
 
       -- draw the border
       setSourceRGB 0 0 0
@@ -259,12 +258,10 @@ updateCanvas ls = do
       -- Set color, and draw the text
       setSourceRGB 0.1 0.1 0.1
 
-   -- FIXME: Midpoint of font, better way of doing lines
-      let xt   = x + 0.05 * w + 10
-          yt n = (15 * n) + y + 0.05 * h + 10
-      --moveTo xt (yt 1)
-      --mapM_ (\l -> textPath l >> stroke) ls
-      foldM_ (\n l -> moveTo xt (yt n) >> showText l >> return (n+1)) 0 ls
+      let xt = x + w / 20
+          yt = y + h / 4
+      moveTo xt yt
+      showLayout lay
 
   return True
 
