@@ -44,15 +44,14 @@ data FishState = FishState { dest :: !Pos,
                              frameN :: !Int,
                              backwards :: !Bool,
                              speed :: !Int,
+                             origSpeed :: !Int,
                              rndGen :: PureMT,
+                             speaking :: !Bool,
                              screenSize :: !(Int,Int),
                              frames :: Array Int FishFrame,
-                             backFrames :: Array Int FishFrame
+                             backFrames :: Array Int FishFrame,
+                             speechBubble :: Maybe Window
                            }
-                 -- running away?
-                 -- size?
-                 -- maybe not?
-                 -- Speech bubble?
 
 
 instance Show FishState where
@@ -75,7 +74,7 @@ fishCount = 8
 fishHeight = 55
 fishWidth = 90
 
-defaultSpeed = 5
+defaultSpeed = 20
 defaultTimeout = 100
 -- Unfortunately the wrong kind of scale.
 -- Fish puns for great justice.
@@ -126,14 +125,63 @@ wandaOpts = do
   pn <- getProgName
   case getOpt Permute options argv of
     (o, [], [])  -> return (foldl (flip id) defaultOptions o)
-    (_, n, [])    -> ioError (userError ("Unknown options: " ++ unwords n))
+    (_, n, [])   -> ioError (userError ("Unknown options: " ++ unwords n))
     (_, _, errs) -> ioError (userError (concat errs ++ usageInfo header options))
       where header = "Usage: " ++ pn ++ " [OPTION...] files..."
 
+-- | unless, but with the condition in the monad
+unlessM acc f = do x <- gets acc
+                   unless x f
+
+-- | when, but with the condition in the monad
+whenM acc f = do x <- gets acc
+                 when x f
 
 
-createSpeechBubble :: IO Window
-createSpeechBubble = do
+-- Fish position, bubble size, bubble window
+-- Unless the fish is already speaking, make it speak.
+fishSpeech :: Pos -> (Int, Int) -> Window -> State FishState ()
+fishSpeech (x,y) (bw, bh) bub =
+  unlessM speaking $ do
+    --TODO: right of the screen, y direction
+    -- If the bubble will fit on the screen, stop moving here
+    setSpeaking bub
+    if x < bw
+      then setDest (bw, y)
+      else setInSpeakingPos
+
+unsetSpeaking :: State FishState ()
+unsetSpeaking = modify (\s -> s { speaking = False,
+                                  speechBubble = Nothing,
+                                  speed = origSpeed s
+                                })
+
+
+bubbleClick :: Window -> IORef FishState -> IO ()
+bubbleClick win ref = do
+  modifyIORef ref (execState unsetSpeaking)
+  widgetDestroy win
+
+
+
+fishClick :: Fish -> IORef FishState -> IO ()
+fishClick fish fsRef = do
+  putStrLn "LOL"
+  bub <- createSpeechBubble fsRef
+  s <- windowGetSize bub
+  p <- windowGetPosition fish
+
+  modifyIORef fsRef (execState (fishSpeech p s bub))
+  readIORef fsRef >>= print
+
+--TODO: Don't show window until in position
+--fish needs its bubble
+
+
+
+
+createSpeechBubble :: IORef FishState -> IO Window
+createSpeechBubble ref = do
   -- Wanda speaks. Figure out the size of the window from the size.
   txt <- readProcess "fortune" [] ""
 
@@ -180,6 +228,10 @@ createSpeechBubble = do
   windowSetHasFrame win False
   widgetShowAll win
 
+  on win buttonPressEvent $
+    tryEvent $ liftIO $ bubbleClick win ref
+
+
   windowMove win 300 300
 
   win `on` exposeEvent $ drawSpeech lay xoff yoff
@@ -191,6 +243,7 @@ setFont lay = do
   fd <- fontDescriptionFromString "sans monospace 12"
   fontDescriptionSetWeight fd WeightBold
   layoutSetFontDescription lay (Just fd)
+
 
 -- layout, x and y offsets to put the layout on the bubble
 drawSpeech :: PangoLayout -> Double -> Double -> EventM EExpose Bool
@@ -317,24 +370,46 @@ swapDirection = do
   modify (\s -> s { backwards = not bw,
                     curFrame  = i' })
 
+-- | Set Wanda pointing left, unless she's already pointing that way
+--   Wanda must point left for the bubble
+setBackwards :: State FishState ()
+setBackwards = unlessM backwards swapDirection
+
+setInSpeakingPos :: State FishState ()
+setInSpeakingPos = setBackwards >> setTempSpeed 0
+
 -- Fish tick? Fish stick?
 -- | Main fish state change function
 fishTick :: Pos -> State FishState Pos
 fishTick p@(x,y) = do
   spd     <- gets speed
   d@(t,_) <- gets dest
+  spk     <- gets speaking
 
   let (dx,dy) = vec spd p d
-      x' = x + dx
-      p' = (x', y + dy)
+      x'      = x + dx
+      p'      = (x', y + dy)
+      close   = dist p' d <= spd
+      stuck   = dx == 0 && dy == 0
+      --CHECKME: Can stuck actually happen?
 
-  -- Not on same side after moving, so turned around
-  when ( (t < x) /= (t < x') ) swapDirection
+      -- Wanda swims in place when speaking
+      fishAct | spk && close = setInSpeakingPos >> return p
+              | spd /= 0     = do
+                           -- Not on same side after moving, so turned around
+                              when ( (t < x) /= (t < x') ) swapDirection
 
-  -- Avoid getting stuck, and get close enough
-  when ((dx == 0 && dy == 0) || dist p' d <= spd) (newDest p')
+                           -- Avoid getting stuck, and get close enough
+                              when (stuck || close) (newDest p')
+                              return p'
+              | otherwise    = return p -- speed == 0, stay in place
+
   updateFrame
-  return p'
+  fishAct
+
+
+
+
 
 -- | Move the current frame to the next depending on the direction of
 -- travel. Backwards means fish moving right to left. Forwards is left
@@ -445,6 +520,30 @@ getFrame s = let arr = if backwards s
 move :: Fish -> Pos -> IO ()
 move = uncurry . windowMove
 
+swapMaybe x = maybe (Just x) (\_ -> Nothing)
+
+swapSpeaking :: Window -> State FishState ()
+swapSpeaking bub = modify (\s -> s { speaking = not (speaking s),
+                                     speechBubble =  swapMaybe bub (speechBubble s)
+                                   })
+
+setSpeaking :: Window -> State FishState ()
+setSpeaking bub = modify (\s -> s { speaking = True,
+                                    speechBubble = Just bub
+                                  })
+
+
+setTempSpeed :: Int -> State FishState ()
+setTempSpeed spd = modify (\s -> s { origSpeed = speed s,
+                                     speed = spd })
+
+restoreSpeed :: State FishState ()
+restoreSpeed = modify (\s -> s { speed = origSpeed s })
+
+
+
+setDest :: Pos -> State FishState ()
+setDest p = modify (\s -> s { dest = p })
 
 -- | Perform the IO needed for a fish update, i.e. move the window and
 -- update the image
@@ -572,11 +671,14 @@ createWanda o (bckFrames, fwdFrames) = do
                                  frameN = fishCount,
                                  backwards = iniBw,
                                  speed = defaultSpeed,
+                                 origSpeed = defaultSpeed,
                                  dest = iniDest,
                                  screenSize = scrSize,
+                                 speaking = False,
                                  rndGen = gen'',
                                  frames = fwdFrames,
-                                 backFrames = bckFrames
+                                 backFrames = bckFrames,
+                                 speechBubble = Nothing
                                }
 
   move win iniPos
@@ -588,7 +690,7 @@ createWanda o (bckFrames, fwdFrames) = do
   every (optTimeout o) (fishIO img win fishRef)
 
   on win buttonPressEvent $
-    tryEvent $ liftIO $ readIORef fishRef >>= print
+    tryEvent $ liftIO $ putStrLn "WOW" >> fishClick win fishRef
 
   return win
 
@@ -601,11 +703,10 @@ main = do
 
   replicateM_ (optNumFish o) (createWanda o fr)
 
-  bub <- createSpeechBubble
+  --bub <- createSpeechBubble
 
-  widgetShowAll bub
+  --widgetShowAll bub
 
   mainGUI
-
 
 
