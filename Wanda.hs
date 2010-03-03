@@ -25,6 +25,8 @@ import System.Environment (getArgs, getProgName)
 import System.Random.Mersenne.Pure64
 import System.Console.GetOpt
 
+import Debug.Trace
+
 
 foreign import ccall "wanda_image.h &wandaimage"
   wandaImage :: Ptr InlineImage
@@ -50,6 +52,7 @@ data FishState = FishState { dest :: !Pos,
                              screenSize :: !(Int,Int),
                              frames :: Array Int FishFrame,
                              backFrames :: Array Int FishFrame,
+                             fishWin :: Fish,
                              speechBubble :: Maybe Window
                            }
 
@@ -74,7 +77,7 @@ fishCount = 8
 fishHeight = 55
 fishWidth = 90
 
-defaultSpeed = 20
+defaultSpeed = 17
 defaultTimeout = 100
 -- Unfortunately the wrong kind of scale.
 -- Fish puns for great justice.
@@ -141,25 +144,31 @@ whenM acc f = do x <- gets acc
 -- Fish position, bubble size, bubble window
 -- Unless the fish is already speaking, make it speak.
 fishSpeech :: Pos -> (Int, Int) -> Window -> State FishState ()
-fishSpeech (x,y) (bw, bh) bub =
+fishSpeech p@(x,y) (bw, bh) bub =
   unlessM speaking $ do
     --TODO: right of the screen, y direction
+    --TODO: Minimum move neede
     -- If the bubble will fit on the screen, stop moving here
     setSpeaking bub
-    if x < bw
-      then setDest (bw, y)
+    if x < bw || y < bh
+      then setDest p (bw, bh)
       else setInSpeakingPos
 
-unsetSpeaking :: State FishState ()
-unsetSpeaking = modify (\s -> s { speaking = False,
-                                  speechBubble = Nothing,
-                                  speed = origSpeed s
-                                })
+--FIXME: Backwards setting broken
+-- | No longer speaking, so choose a new direction and destroy the bubble
+unsetSpeaking :: Pos -> State FishState ()
+unsetSpeaking p = newDest p >> modify (\s -> s { speaking = False,
+                                                 speechBubble = Nothing,
+                                                 speed = origSpeed s
+                                               }) >> do
+                                                     bw <- gets backwards
+                                                     trace ("unsetSpeaking: bw = " ++ show bw) return ()
 
 
 bubbleClick :: Window -> IORef FishState -> IO ()
 bubbleClick win ref = do
-  modifyIORef ref (execState unsetSpeaking)
+  p <- windowGetPosition =<< fishWin <$> readIORef ref
+  modifyIORef ref (execState (unsetSpeaking p))
   widgetDestroy win
 
 
@@ -359,6 +368,7 @@ splitStrip scale n img = do
 -- animation
 swapDirection :: State FishState ()
 swapDirection = do
+  trace "Swapping direction" return ()
   i  <- gets curFrame
   n  <- gets frameN
   bw <- gets backwards
@@ -376,7 +386,7 @@ setBackwards :: State FishState ()
 setBackwards = unlessM backwards swapDirection
 
 setInSpeakingPos :: State FishState ()
-setInSpeakingPos = setBackwards >> setTempSpeed 0
+setInSpeakingPos = trace "Setting in speaking pos:" setBackwards >> setTempSpeed 0
 
 -- Fish tick? Fish stick?
 -- | Main fish state change function
@@ -422,7 +432,7 @@ updateFrame = do
   modify (\s -> s { curFrame = i' })
 
 
--- | Pick a new destination and Randomgen
+-- | Pick a new destination and Randomgen from the current position
 newDest :: Pos -> State FishState ()
 newDest (x,_) = do
   (sx, sy) <- gets screenSize
@@ -540,10 +550,11 @@ setTempSpeed spd = modify (\s -> s { origSpeed = speed s,
 restoreSpeed :: State FishState ()
 restoreSpeed = modify (\s -> s { speed = origSpeed s })
 
-
-
-setDest :: Pos -> State FishState ()
-setDest p = modify (\s -> s { dest = p })
+--FIXME: Some redundancy with newDest and stuff
+-- | Current position -> Desired position
+setDest :: Pos -> Pos -> State FishState ()
+setDest c@(cx,_) p@(px,_) = modify (\s -> s { dest = p,
+                                              backwards = px < cx })
 
 -- | Perform the IO needed for a fish update, i.e. move the window and
 -- update the image
@@ -678,6 +689,7 @@ createWanda o (bckFrames, fwdFrames) = do
                                  rndGen = gen'',
                                  frames = fwdFrames,
                                  backFrames = bckFrames,
+                                 fishWin = win,
                                  speechBubble = Nothing
                                }
 
