@@ -171,6 +171,14 @@ bubbleClick win ref = do
   modifyIORef ref (execState (unsetSpeaking p))
   widgetDestroy win
 
+bubblePosition :: (Int, Int) -> Pos -> State FishState (Maybe Pos)
+bubblePosition (w, h) (x,y) = do
+  spd <- gets speed
+  spk <- gets speaking
+  return $ if spk && spd == 0  -- in places, set the bubble
+             then Just (x - w, y - h)
+             else Nothing
+
 
 
 fishClick :: Fish -> IORef FishState -> IO ()
@@ -235,13 +243,9 @@ createSpeechBubble ref = do
   windowSetKeepAbove win True
   windowSetRole win "Wanda Says"
   windowSetHasFrame win False
-  widgetShowAll win
 
-  on win buttonPressEvent $
+  win `on` buttonPressEvent $
     tryEvent $ liftIO $ bubbleClick win ref
-
-
-  windowMove win 300 300
 
   win `on` exposeEvent $ drawSpeech lay xoff yoff
 
@@ -556,6 +560,16 @@ setDest :: Pos -> Pos -> State FishState ()
 setDest c@(cx,_) p@(px,_) = modify (\s -> s { dest = p,
                                               backwards = px < cx })
 
+maybeIO = maybe (return ())
+
+
+moveBub :: Pos -> FishState -> IO ()
+moveBub p st = maybeIO (\w -> do
+                           ws <- windowGetSize w
+                           maybeIO (\b -> move w b >> widgetShowAll w)
+                                   (evalState (bubblePosition ws p) st))
+                       (speechBubble st)
+
 -- | Perform the IO needed for a fish update, i.e. move the window and
 -- update the image
 fishIO :: Image -> Fish -> IORef FishState -> IO Bool
@@ -565,6 +579,7 @@ fishIO img win ref = do
   (r', fs') <- runState (fishTick r) <$> readIORef ref
 
   move win r'
+  moveBub r' fs'
 
   let (fr,msk) = getFrame fs'
 
@@ -663,6 +678,7 @@ createWanda o (bckFrames, fwdFrames) = do
 
 -- The transparency needs to be redone as the window is redrawn
   winDraw <- widgetGetDrawWindow win
+
   onExpose win (\_ -> transparentBG winDraw >> return False)
 
 --TODO: Update screen size changed signal
