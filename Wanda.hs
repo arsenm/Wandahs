@@ -304,8 +304,8 @@ setFont lay = do
 
 -- | Drawing function for the speech bubble.
 drawSpeech :: PangoLayout   -- ^ Layout containing the fortune to display
-           -> Double        -- ^ Width of the box area
-           -> Double        -- ^ Height of the box area
+           -> Double        -- ^ Width of the box area, neglecting the point part
+           -> Double        -- ^ Height of the box area, neglecting the pointy part
            -> Double        -- ^ Offset / padding / margin in the x direction
            -> Double        -- ^ Offset / padding / margin in the y direction
            -> Double        -- ^ Distance in the x direction for the point
@@ -314,47 +314,77 @@ drawSpeech :: PangoLayout   -- ^ Layout containing the fortune to display
            -> EventM EExpose Bool
 drawSpeech lay w h xoff yoff px py rpx = do
   win <- eventWindow
-  liftIO $ do
-    renderWithDrawable win $ do
-      -- Fill the bubble background
-      setSourceRGBA 0.8 0.8 1 0.85
-      setOperator OperatorSource
+  let r = 40  -- Arbitrary number
+      x = 0
+      y = 0
 
-      -- Draw the border
-      setSourceRGB 0 0 0
-      setLineWidth 0
-      setLineCap LineCapRound
-      setLineJoin LineJoinRound
+      -- Draw a speech bubble with point on the left
+      leftBubble = do
+        -- Start from lower left
+        moveTo (x+px) (y + h - py)
+        lineTo (x+px) (y+r)
 
-      let r = 40  -- Arbitrary number
-          x = 0
-          y = 0
+        -- Wrap around upper left corner
+        curveTo (x+px) y (x+px) y (x+px+r) y
+        lineTo (x+px+w-r) y
 
-      -- start from bottom left
-      moveTo (x+w-rpx) (y+h)
-      lineTo (x+r) (y+h)
-      curveTo x (y+h) x (y+h) x (y+h-r)
-      lineTo x (y+r)
+        -- Curve down on the upper right
+        curveTo (x+px+w) y (x+px+w) y (x+px+w) (y+r)
+        lineTo (x+px+w) (y+h-r)
 
-      -- upper left
-      curveTo x y x y (x+r) y
-      lineTo (x+w-r) y
-      curveTo (x+w) y (x+w) y (x+w) (y+r)
+        -- Curve back to the left on the lower right corner
+        curveTo (x+px+w) (y+h) (x+px+w) (y+h) (x+px+w) (y+h-r)
+        lineTo (x+px+w-rpx) (y+h-r)  -- FIXME:
 
-      -- pointy bit
-      lineTo (x+w) (y+h - yoff)
-      lineTo (x+w+px) (y+h+py)
+        --curveTo (x+px+w) (y+h-r) (x+px+w) (y+h-r) (x+px+w) (y+h)
+        --lineTo (x+px+w-5 * rpx) (y+h)
 
-      closePath
+        -- pointy bit
 
-      setSourceRGBA 1 0.6 0.9 0.85
-      fill
+        --lineTo x y
 
-      -- Set color, and draw the text
-      setSourceRGB 0.1 0.1 0.1
+      -- Draw a speech bubble with point on the right
+      rightBubble = do
+        -- start from bottom left
+        moveTo (x+w-rpx) (y+h)
+        lineTo (x+r) (y+h)
+        curveTo x (y+h) x (y+h) x (y+h-r)
+        lineTo x (y+r)
 
-      moveTo (x+xoff) (y+yoff)
-      showLayout lay
+        -- upper left
+        curveTo x y x y (x+r) y
+        lineTo (x+w-r) y
+        curveTo (x+w) y (x+w) y (x+w) (y+r)
+
+        -- pointy bit
+        lineTo (x+w) (y+h - yoff)
+        lineTo (x+w+px) (y+h+py)
+
+      drawBubble bubblePath = do
+        -- Fill the bubble background
+        setSourceRGBA 0.8 0.8 1 0.85
+        setOperator OperatorSource
+
+        -- Draw the border
+        setSourceRGB 1 1 1
+        setLineWidth 10
+        setLineCap LineCapRound
+        setLineJoin LineJoinRound
+
+        bubblePath
+        closePath
+
+        setSourceRGBA 1 0.6 0.9 0.85
+        fill
+
+        -- Set color, and draw the text
+        setSourceRGB 0.1 0.1 0.1
+
+        moveTo (x+xoff) (y+yoff)
+        showLayout lay            -- FIXME: this needs to be shifted for left bubble more right
+
+  liftIO $ renderWithDrawable win (drawBubble leftBubble)
+
 
   return True
 
@@ -795,6 +825,11 @@ main = do
   fr <- fishFrames (optScale o)
 
   replicateM_ (optNumFish o) (createWanda o fr)
+
+  -- bub <- createSpeechBubble
+
+  -- widgetShowAll bub
+  -- move bub (300,300)
 
   mainGUI
 
