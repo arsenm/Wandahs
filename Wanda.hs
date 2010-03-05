@@ -179,19 +179,6 @@ bubbleClick win ref = do
   execIOState ref (unsetSpeaking p)
   widgetDestroy win
 
--- | Calculate whether to place the speech bubble. Evaluates to
--- Nothing if the fish is not in place and ready to speak.
-bubblePosition :: (Int, Int)     -- ^ Speech bubble window dimensions
-               -> Pos            -- ^ Position of the fish
-               -> State FishState (Maybe Pos)  -- ^ Position to place the bubble, if ready
-bubblePosition (w, h) (x,y) = do
-  spd <- gets speed
-  spk <- gets speaking
-  (fw,fh) <- gets frameSize
-  return $ if spk && spd == 0  -- in places, set the bubble
-             then Just (x - w + (2 * fw) `div` 11, y - h + (5 * fh `div` 7))
-             else Nothing
-
 
 -- | Handler for clicking on the fish. Depending on the mode Wanda is
 -- in, this could mean displaying a fortune in a speech bubble, or
@@ -240,10 +227,14 @@ addBubble :: Pos             -- ^ Current fish position
           -> (Int, Int)      -- ^ Size of the bubble
           -> Bubble          -- ^ The bubble
           -> State FishState BubblePos
-addBubble p@(x,y) (bw, bh) bub = do
+addBubble p@(x,y) b@(bw, bh) bub = do
   (sw, sh) <- gets screenSize
   bckw     <- gets backwards
-  let l = x >= bw
+  (fw,fh) <- gets frameSize
+
+  --FIXME: THE DEST IS A LIE!!! Dependent on the direction and stuff.
+  let dest = (x - bw + (2 * fw) `div` 11, y - bh + (5 * fh `div` 7))
+      l = x >= bw
       r = x + bw <= sw   -- TODO: Account for bubble placement towards mouth
 
       u = y <= 0
