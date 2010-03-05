@@ -14,6 +14,7 @@ import Control.Arrow
 import Control.Monad.State
 
 import Data.Array
+import Data.Maybe
 import Data.Binary.Get
 import Data.IORef
 
@@ -50,6 +51,7 @@ data FishState = FishState { dest :: !Pos,
                              rndGen :: PureMT,
                              speaking :: !Bool,
                              screenSize :: !(Int,Int),
+                             frameHeight :: !Int,
                              frames :: Array Int FishFrame,
                              backFrames :: Array Int FishFrame,
                              fishWin :: Fish,
@@ -136,10 +138,6 @@ wandaOpts = do
 unlessM acc f = do x <- gets acc
                    unless x f
 
--- | when, but with the condition in the monad
-whenM acc f = do x <- gets acc
-                 when x f
-
 
 -- Fish position, bubble size, bubble window
 -- Unless the fish is already speaking, make it speak.
@@ -151,7 +149,7 @@ fishSpeech p@(x,y) (bw, bh) bub =
     -- If the bubble will fit on the screen, stop moving here
     setSpeaking bub
     if x < bw || y < bh
-      then setDest p (bw, bh)
+      then setDest p (bw + 20, bh + 20)
       else setInSpeakingPos
 
 --FIXME: Backwards setting broken
@@ -160,9 +158,7 @@ unsetSpeaking :: Pos -> State FishState ()
 unsetSpeaking p = newDest p >> modify (\s -> s { speaking = False,
                                                  speechBubble = Nothing,
                                                  speed = origSpeed s
-                                               }) >> do
-                                                     bw <- gets backwards
-                                                     trace ("unsetSpeaking: bw = " ++ show bw) return ()
+                                               })
 
 
 bubbleClick :: Window -> IORef FishState -> IO ()
@@ -175,8 +171,9 @@ bubblePosition :: (Int, Int) -> Pos -> State FishState (Maybe Pos)
 bubblePosition (w, h) (x,y) = do
   spd <- gets speed
   spk <- gets speaking
+  fh  <- gets frameHeight
   return $ if spk && spd == 0  -- in places, set the bubble
-             then Just (x - w, y - h)
+             then Just (x - w, y - h + (fh `div` 2))
              else Nothing
 
 
@@ -191,10 +188,6 @@ fishClick fish fsRef = do
   modifyIORef fsRef (execState (fishSpeech p s bub))
   readIORef fsRef >>= print
 
---TODO: Don't show window until in position
---fish needs its bubble
-
-
 
 
 createSpeechBubble :: IORef FishState -> IO Window
@@ -205,21 +198,28 @@ createSpeechBubble ref = do
   pctx <- cairoCreateContext Nothing
   lay  <- layoutText pctx txt
 
-  setFont lay
+  fsize <- setFont lay
 
   (PangoRectangle x y w' h',_) <- layoutGetExtents lay
-  lc <- layoutGetLineCount lay
 
   --TODO: Some inconsistency with the pointy bit and stretching
   --extra space for the pointy bit, plus padding
-  let w = w' - x
-      h = h' - y
+  let wt = w' - x       -- width of the text
+      ht = h' - y       -- height of the text
+      yoff = 2 * fsize  -- padding area
+      xoff = 3 * fsize
 
-      xoff = w / 20
-      yoff = 2 * (h / fromIntegral lc) -- 2 lines of padding
+      boxw = wt + (2 * xoff)  -- size of the padded rectangle area
+      boxh = ht + (2 * yoff)
 
-      ww = floor $ 1.2 * w + (w / 6) -- w / 6 is px
-      wh = floor $ h + (2 * yoff) + (h / 5) -- h / 5 is py
+      px  = boxw / 10    -- pointy bit
+      py  = boxh / 5
+      rpx = xoff         -- how far back to the side for it
+
+      ww = floor $ boxw + px  -- Padded area + pointy bit, the whole surface
+      wh = floor $ boxh + py
+
+
 
   putStrLn txt
   print (ww,wh)
@@ -247,32 +247,23 @@ createSpeechBubble ref = do
   win `on` buttonPressEvent $
     tryEvent $ liftIO $ bubbleClick win ref
 
-  win `on` exposeEvent $ drawSpeech lay xoff yoff
+  win `on` exposeEvent $ drawSpeech lay boxw boxh xoff yoff px py rpx
 
   return win
 
-setFont :: PangoLayout -> IO ()
+-- | Sets the font, and returns the font size
+setFont :: PangoLayout -> IO Double
 setFont lay = do
-  fd <- fontDescriptionFromString "sans monospace 12"
+  fd <- fontDescriptionFromString "sans monospace 10"
   fontDescriptionSetWeight fd WeightBold
   layoutSetFontDescription lay (Just fd)
+  fromJust <$> fontDescriptionGetSize fd
 
-
--- layout, x and y offsets to put the layout on the bubble
-drawSpeech :: PangoLayout -> Double -> Double -> EventM EExpose Bool
-drawSpeech lay xoff yoff = do
+-- layout, width and height of the box area, x and y offsets to put the layout on the bubble
+drawSpeech :: PangoLayout -> Double -> Double -> Double -> Double -> Double -> Double -> Double -> EventM EExpose Bool
+drawSpeech lay w h xoff yoff px py rpx = do
   win <- eventWindow
   liftIO $ do
-    (w', h') <- (realToFrac *** realToFrac) <$> drawableGetSize win
-    let lw  = 0
-        w = w' - 2 * lw - px
-        h = h' - 2 * lw - py
-
-    --TODO: Figure out something better for this
-        px  = w' / 6   -- pointy bit
-        py  = h' / 5
-        rpx = w' / 10   -- how far back to the side for it
-
     renderWithDrawable win $ do
       -- fill the bubble background
       setSourceRGBA 0.8 0.8 1 0.85
@@ -280,13 +271,13 @@ drawSpeech lay xoff yoff = do
 
       -- draw the border
       setSourceRGB 0 0 0
-      setLineWidth lw
+      setLineWidth 0
       setLineCap LineCapRound
       setLineJoin LineJoinRound
 
       let r = 40
-          x = lw / 2
-          y = lw / 2
+          x = 0
+          y = 0
 
       -- start from bottom left
       moveTo (x+w-rpx) (y+h)
@@ -299,9 +290,8 @@ drawSpeech lay xoff yoff = do
       lineTo (x+w-r) y
       curveTo (x+w) y (x+w) y (x+w) (y+r)
 
- --FIXME
       -- pointy bit
-      lineTo (x+w) (y+h - (h/4))
+      lineTo (x+w) (y+h - yoff)
       lineTo (x+w+px) (y+h+py)
 
       closePath
@@ -557,8 +547,8 @@ restoreSpeed = modify (\s -> s { speed = origSpeed s })
 --FIXME: Some redundancy with newDest and stuff
 -- | Current position -> Desired position
 setDest :: Pos -> Pos -> State FishState ()
-setDest c@(cx,_) p@(px,_) = modify (\s -> s { dest = p,
-                                              backwards = px < cx })
+setDest (cx,_) p@(px,_) = modify (\s -> s { dest = p,
+                                            backwards = px < cx })
 
 maybeIO = maybe (return ())
 
@@ -694,6 +684,8 @@ createWanda o (bckFrames, fwdFrames) = do
       (iniDest, gen'') = randomPos      gen' scrSize  -- where to go from there (not offscreen)
       iniBw = fst iniDest < fst iniPos
 
+  imgHeight <- pixbufGetHeight (fst $ fwdFrames ! 0) -- kind of shittily get the size after scaling
+
   let iniFishState = FishState { curFrame = 1,
                                  frameN = fishCount,
                                  backwards = iniBw,
@@ -701,6 +693,7 @@ createWanda o (bckFrames, fwdFrames) = do
                                  origSpeed = defaultSpeed,
                                  dest = iniDest,
                                  screenSize = scrSize,
+                                 frameHeight = imgHeight,
                                  speaking = False,
                                  rndGen = gen'',
                                  frames = fwdFrames,
