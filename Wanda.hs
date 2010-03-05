@@ -21,6 +21,8 @@
 {-# OPTIONS_GHC -W -funbox-strict-fields #-}
 {-# CFILES wanda_image.c #-}
 
+--TODO: Fortune logging?
+
 import Graphics.Rendering.Cairo
 
 import Graphics.UI.Gtk hiding (fill)
@@ -271,8 +273,8 @@ createSpeechBubble ref = do
             windowDecorated := False,
             windowTypeHint := WindowTypeHintDock, -- Dock
             windowGravity := GravityStatic,     -- Importantish.
-            windowDefaultWidth := ww,
-            windowDefaultHeight := wh,
+            windowDefaultWidth := ww + 40,
+            windowDefaultHeight := wh + 40,
             windowAcceptFocus := True, -- False?
             windowResizable := True, -- False
             windowSkipTaskbarHint := True,
@@ -333,15 +335,11 @@ drawSpeech lay w h xoff yoff px py rpx = do
         lineTo (x+px+w) (y+h-r)
 
         -- Curve back to the left on the lower right corner
-        curveTo (x+px+w) (y+h) (x+px+w) (y+h) (x+px+w) (y+h-r)
-        lineTo (x+px+w-rpx) (y+h-r)  -- FIXME:
-
-        --curveTo (x+px+w) (y+h-r) (x+px+w) (y+h-r) (x+px+w) (y+h)
-        --lineTo (x+px+w-5 * rpx) (y+h)
+        curveTo (x+px+w) (y+h) (x+px+w) (y+h) (x+px+w-r) (y+h)
+        lineTo (x+px+rpx) (y+h)
 
         -- pointy bit
-
-        --lineTo x y
+        lineTo x (y+h+py)
 
       -- Draw a speech bubble with point on the right
       rightBubble = do
