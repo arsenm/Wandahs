@@ -1,3 +1,22 @@
+-- -*-haskell-*-
+-- Wanda: A desktop Fish.
+--
+-- Copyright (C) 2010 Matthew Arsenault
+
+-- This program is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or
+-- (at your option) any later version.
+
+-- This program is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-- GNU General Public License for more details.
+
+-- You should have received a copy of the GNU General Public License
+-- along with this program.  If not, see <http://www.gnu.org/licenses/>.
+--
+
 {-# LANGUAGE ForeignFunctionInterface, BangPatterns, ScopedTypeVariables #-}
 {-# OPTIONS_GHC -W -funbox-strict-fields #-}
 {-# CFILES wanda_image.c #-}
@@ -718,8 +737,6 @@ createWanda o (bckFrames, fwdFrames) = do
   windowSetHasFrame win False
 
   widgetShowAll win
-
--- FIXME: Some kind of flicker on start. Maybe start offscreen?
 
 -- The transparency needs to be redone as the window is redrawn
   winDraw <- widgetGetDrawWindow win
