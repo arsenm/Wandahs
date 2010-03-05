@@ -21,6 +21,6 @@ GHC-Options: -W -O0 -funbox-strict-fields
 Install-Includes: ./wanda_image.h
 Include-Dirs: .
 C-Sources: ./wanda_image.c
-Extensions: ForeignFunctionInterface
+Extensions: ForeignFunctionInterface, ScopedTypeVariables
 Build-Depends: base, glib, gtk, mtl, haskell98, array, cairo, mersenne-random-pure64, mersenne-random, binary, bytestring, process
 

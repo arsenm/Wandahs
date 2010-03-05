@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface, BangPatterns #-}
+{-# LANGUAGE ForeignFunctionInterface, BangPatterns, ScopedTypeVariables #-}
 {-# OPTIONS_GHC -W -funbox-strict-fields #-}
 {-# CFILES wanda_image.c #-}
 
@@ -12,6 +12,7 @@ import qualified Data.ByteString.Lazy as B
 import Control.Applicative
 import Control.Arrow
 import Control.Monad.State
+import Control.Exception
 
 import Data.Array
 import Data.Maybe
@@ -531,14 +532,15 @@ vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
 --TODO: Exceptions
 
 -- | Produce a new mersenne-random-pure64 random number generator,
--- seeding from /dev/urandom.
+-- seeding from /dev/urandom. If that fails, i.e. on Windows, just use
+-- the default seeded from clock newPureMT.
 newPureMTSysSeed :: IO PureMT
-newPureMTSysSeed = do
-  h <- openBinaryFile "/dev/urandom" ReadMode
-  bs <- B.hGet h 8
-  let x = runGet getWord64le bs
-  hClose h
-  return (pureMT x)
+newPureMTSysSeed =
+  handle (\(_::IOException) -> newPureMT) $
+    bracket (openBinaryFile "/dev/urandom" ReadMode)
+            hClose
+            (\h -> pureMT . runGet getWord64le <$> B.hGet h 8)
+
 
 -- | Generate a random integer in the given range using
 -- mersenne-random-pure64. I don't understand why that doesn't have
