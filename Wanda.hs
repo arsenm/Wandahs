@@ -291,7 +291,7 @@ createSpeechBubble ref = do
   win `on` buttonPressEvent $
     tryEvent $ liftIO $ bubbleClick win ref
 
-  win `on` exposeEvent $ drawSpeech lay boxw boxh xoff yoff px py rpx
+  win `on` exposeEvent $ drawSpeech lay boxw boxh xoff yoff px py rpx LowerLeft
 
   return win
 
@@ -304,6 +304,14 @@ setFont lay = do
   layoutSetFontDescription lay (Just fd)
   fromJust <$> fontDescriptionGetSize fd
 
+-- | Position of the pointy part
+data BubblePos = UpperLeft
+               | UpperRight
+               | LowerRight
+               | LowerLeft
+               deriving (Eq, Ord, Show, Enum)
+
+
 -- | Drawing function for the speech bubble.
 drawSpeech :: PangoLayout   -- ^ Layout containing the fortune to display
            -> Double        -- ^ Width of the box area, neglecting the point part
@@ -313,12 +321,16 @@ drawSpeech :: PangoLayout   -- ^ Layout containing the fortune to display
            -> Double        -- ^ Distance in the x direction for the point
            -> Double        -- ^ Distance in the y direction for the point
            -> Double        -- ^ What point the pointy part should come back to on the bubble
+           -> BubblePos     -- ^ Which way the point goes
            -> EventM EExpose Bool
-drawSpeech lay w h xoff yoff px py rpx = do
+drawSpeech lay w h xoff yoff px py rpx dir = do
   win <- eventWindow
   let r = 40  -- Arbitrary number
       x = 0
       y = 0
+
+      (bdr, tx, ty) | dir == UpperRight || dir == LowerRight = (rightBubble, x+xoff, y+yoff)
+                    | otherwise = (leftBubble, x+px+xoff, y+yoff)
 
       -- Draw a speech bubble with point on the left
       leftBubble = do
@@ -378,10 +390,10 @@ drawSpeech lay w h xoff yoff px py rpx = do
         -- Set color, and draw the text
         setSourceRGB 0.1 0.1 0.1
 
-        moveTo (x+xoff) (y+yoff)
+        moveTo tx ty
         showLayout lay            -- FIXME: this needs to be shifted for left bubble more right
 
-  liftIO $ renderWithDrawable win (drawBubble leftBubble)
+  liftIO $ renderWithDrawable win (drawBubble bdr)
 
 
   return True
