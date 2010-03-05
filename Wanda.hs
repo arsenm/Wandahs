@@ -78,7 +78,7 @@ data FishState = FishState { dest :: !Pos,         -- ^ Current destination
                              frames :: Array Int FishFrame,  -- ^ Frames with fish facing left
                              backFrames :: Array Int FishFrame, -- ^ Frames with fish facing right
                              fishWin :: Fish,                   -- ^ The fish's window
-                             speechBubble :: Maybe Window       -- ^ The speech bubble window
+                             speechBubble :: Maybe Bubble       -- ^ The speech bubble window
                            }
 
 
@@ -161,33 +161,6 @@ unlessM acc f = do x <- gets acc
                    unless x f
 
 
--- | Unless the fish is already speaking, make it speak. This also
--- selects a new destination which makes sure the speech bubble will
--- be visible on screen.
-fishSpeech :: Pos                -- ^ Fish position
-           -> (Int, Int)         -- ^ Bubble size
-           -> Window             -- ^ Bubble window
-           -> State FishState ()
-fishSpeech p@(x,y) (bw, bh) bub =
-  unlessM speaking $ do
-    (sw, sh) <- gets screenSize
-    let pad = 50    -- for a little extra space at the edge of screen
-
-        newx | x >= sw   = sw - pad
-             | x <= bw   = bw + pad
-             | otherwise = x
-
-        newy | y >= sh   = sh - pad
-             | y <= bh   = bh + pad
-             | otherwise = y
-
-    setSpeaking bub
-
-  -- If the bubble will fit on the screen, stop moving here
-    if x > bw && y > bh && x < sw && y < sh
-      then setInSpeakingPos
-      else setDest p (newx, newy)
-
 --FIXME: Backwards setting broken
 -- | No longer speaking, so choose a new direction and destroy the bubble
 unsetSpeaking :: Pos -> State FishState ()
@@ -203,7 +176,7 @@ bubbleClick :: Window           -- ^ The speech bubble's window
             -> IO ()
 bubbleClick win ref = do
   p <- windowGetPosition =<< fishWin <$> readIORef ref
-  modifyIORef ref (execState (unsetSpeaking p))
+  execIOState ref (unsetSpeaking p)
   widgetDestroy win
 
 -- | Calculate whether to place the speech bubble. Evaluates to
@@ -226,12 +199,21 @@ bubblePosition (w, h) (x,y) = do
 fishClick :: Fish -> IORef FishState -> IO ()
 fishClick fish fsRef = do
   putStrLn "LOL"
-  bub <- createSpeechBubble fsRef
-  s <- windowGetSize bub
   p <- windowGetPosition fish
 
-  modifyIORef fsRef (execState (fishSpeech p s bub))
-  readIORef fsRef >>= print
+  -- Create speech bubble and add to the fish state
+  createSpeechBubble fsRef p
+
+  putStrLn "FishClick Final State: " >> readIORef fsRef >>= print
+
+type Bubble = Window
+
+{-
+data Bubble = Bubble { bubbleWindow :: Window,
+                       bubbleHoriz :: Horiz,
+                       bubbleVert :: Vert
+                     }
+-}
 
 data Horiz = L
            | R
@@ -239,13 +221,26 @@ data Horiz = L
 data Vert = U
           | D
 
+-- | Read an initial state from an IORef, run through the state
+-- monad. Update the state of the state monad to the resulting state,
+-- and return the result.
+-- Basically it's modifyIORef with the result of the state monad.
+runIOState :: IORef a -> State a b -> IO b
+runIOState ref f = do
+  (v, st') <- runState f <$> readIORef ref
+  writeIORef ref st'
+  return v
 
--- Also return if need to flip ?
--- | Get the place where the point needs to go
-getBubbleDirection :: Pos          -- ^ Current fish position
-                   -> (Int, Int)   -- ^ Size of the bubble
-                   -> State FishState (BubblePos, Bool)
-getBubbleDirection p@(x,y) (bw, bh) = do
+-- | Use an initial state read from an ioref, and update after.
+execIOState ref m = modifyIORef ref (execState m)
+
+-- | Adds a bubble to the given fish state.  Returns the place where
+-- the point needs to go.
+addBubble :: Pos             -- ^ Current fish position
+          -> (Int, Int)      -- ^ Size of the bubble
+          -> Bubble          -- ^ The bubble
+          -> State FishState BubblePos
+addBubble p@(x,y) (bw, bh) bub = do
   (sw, sh) <- gets screenSize
   bckw     <- gets backwards
   let l = x >= bw
@@ -255,8 +250,8 @@ getBubbleDirection p@(x,y) (bw, bh) = do
       d = y + bh <= sh
 
      -- Second item is if a flip is needed
-      horiz | bckw      = if l then (R,False) else (L, True)
-            | otherwise = if r then (L,False) else (R, True)
+      horiz | bckw      = if l then (R, False) else (L, True)
+            | otherwise = if r then (L, False) else (R, True)
 
       vert = if u then D else U  -- perfer upper bubble
 
@@ -266,7 +261,11 @@ getBubbleDirection p@(x,y) (bw, bh) = do
           | (L,_) <- horiz, D <- vert = LowerLeft
           | (R,_) <- horiz, D <- vert = LowerRight
 
-  return (dir, snd horiz)
+  -- update the fish state if we need to turn around.
+  when (snd horiz) swapDirection
+  setSpeaking bub
+
+  return dir
   {-
       dir | bckw && l && u     = LowerRight
           | fw   && r && u     = LowerLeft
@@ -274,13 +273,14 @@ getBubbleDirection p@(x,y) (bw, bh) = do
           | bckw && l && not u
 -}
 
+--TODO: Pass remaining options given to fortune
 
 -- | Create a new speech bubble window, displaying a fortune from
 -- fortune. The window is not placed or displayed on the screen. The
 -- bubble has the text centered, and has the pointy part in the lower
 -- right corner.
-createSpeechBubble :: IORef FishState -> IO Window
-createSpeechBubble ref = do
+createSpeechBubble :: IORef FishState -> Pos -> IO Bubble
+createSpeechBubble ref pos = do
   -- Wanda speaks. Figure out the size of the window from the size.
   txt <- readProcess "fortune" [] ""
 
@@ -329,11 +329,16 @@ createSpeechBubble ref = do
   windowSetRole win "Wanda Says"
   windowSetHasFrame win False
 
+  -- Add the bubble to the fish. Also figures out the direction to
+  -- draw the speech bubble.
+  dir <- runIOState ref (addBubble pos (ww,wh) win)
+
   win `on` buttonPressEvent $
     tryEvent $ liftIO $ bubbleClick win ref
 
-  win `on` exposeEvent $ drawSpeech lay boxw boxh xoff yoff px py rpx LowerLeft
+  win `on` exposeEvent $ drawSpeech lay boxw boxh xoff yoff px py rpx dir
 
+  widgetShowAll win
   return win
 
 -- | Sets the font of the layout, and returns the font size
@@ -668,12 +673,12 @@ move = uncurry . windowMove
 
 swapMaybe x = maybe (Just x) (\_ -> Nothing)
 
-swapSpeaking :: Window -> State FishState ()
+swapSpeaking :: Bubble -> State FishState ()
 swapSpeaking bub = modify (\s -> s { speaking = not (speaking s),
                                      speechBubble =  swapMaybe bub (speechBubble s)
                                    })
 
-setSpeaking :: Window -> State FishState ()
+setSpeaking :: Bubble -> State FishState ()
 setSpeaking bub = modify (\s -> s { speaking = True,
                                     speechBubble = Just bub
                                   })
@@ -694,18 +699,6 @@ setDest :: Pos -> Pos -> State FishState ()
 setDest (cx,_) p@(px,_) = modify (\s -> s { dest = p,
                                             backwards = px < cx })
 
-maybeIO = maybe (return ())
-
--- | Move the speech bubble
-moveBub :: Pos        -- ^ The current position of the fish
-        -> FishState  -- ^ The fish state
-        -> IO ()
-moveBub p st = maybeIO (\w -> do
-                           ws <- windowGetSize w
-                           maybeIO (\b -> move w b >> widgetShowAll w)
-                                   (evalState (bubblePosition ws p) st))
-                       (speechBubble st)
-
 -- | Perform the IO needed for a fish update, i.e. move the window and
 -- update the image
 fishIO :: Image            -- ^ The fish image widget
@@ -718,7 +711,7 @@ fishIO img win ref = do
   (r', fs') <- runState (fishTick r) <$> readIORef ref
 
   move win r'
-  moveBub r' fs'
+-- moveBub r' fs'
 
   let (fr,msk) = getFrame fs'
 
