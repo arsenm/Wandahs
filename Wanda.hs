@@ -51,7 +51,7 @@ data FishState = FishState { dest :: !Pos,
                              rndGen :: PureMT,
                              speaking :: !Bool,
                              screenSize :: !(Int,Int),
-                             frameHeight :: !Int,
+                             frameSize :: !(Int,Int),
                              frames :: Array Int FishFrame,
                              backFrames :: Array Int FishFrame,
                              fishWin :: Fish,
@@ -171,9 +171,9 @@ bubblePosition :: (Int, Int) -> Pos -> State FishState (Maybe Pos)
 bubblePosition (w, h) (x,y) = do
   spd <- gets speed
   spk <- gets speaking
-  fh  <- gets frameHeight
+  (fw,fh) <- gets frameSize
   return $ if spk && spd == 0  -- in places, set the bubble
-             then Just (x - w, y - h + (fh `div` 2))
+             then Just (x - w + (2 * fw) `div` 11, y - h + (5 * fh `div` 7))
              else Nothing
 
 
@@ -617,6 +617,8 @@ every = flip timeoutAdd
 getScreenSize :: Screen -> IO (Int, Int)
 getScreenSize scr = liftA2 (,) (screenGetWidth scr) (screenGetHeight scr)
 
+pixbufGetSize :: Pixbuf -> IO (Int, Int)
+pixbufGetSize p = liftA2 (,) (pixbufGetWidth p) (pixbufGetHeight p)
 
 -- | Split the image up into the individual fish frames
 fishFrames :: Maybe Double -> IO (Array Int FishFrame, Array Int FishFrame)
@@ -631,7 +633,6 @@ getMask pb = do
   bm <- pixmapNew (Nothing::Maybe DrawWindow) w h (Just 1)
   pixbufRenderThresholdAlpha pb bm 0 0 0 0 (-1) (-1) 1
   return bm
-
 
 
 -- | Takes the (forward frames, backward frames) and creates a new wanda window
@@ -684,7 +685,7 @@ createWanda o (bckFrames, fwdFrames) = do
       (iniDest, gen'') = randomPos      gen' scrSize  -- where to go from there (not offscreen)
       iniBw = fst iniDest < fst iniPos
 
-  imgHeight <- pixbufGetHeight (fst $ fwdFrames ! 0) -- kind of shittily get the size after scaling
+  imgSize <- pixbufGetSize (fst $ fwdFrames ! 0) -- kind of shittily get the size after scaling
 
   let iniFishState = FishState { curFrame = 1,
                                  frameN = fishCount,
@@ -693,7 +694,7 @@ createWanda o (bckFrames, fwdFrames) = do
                                  origSpeed = defaultSpeed,
                                  dest = iniDest,
                                  screenSize = scrSize,
-                                 frameHeight = imgHeight,
+                                 frameSize = imgSize,
                                  speaking = False,
                                  rndGen = gen'',
                                  frames = fwdFrames,
