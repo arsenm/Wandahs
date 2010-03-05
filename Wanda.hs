@@ -233,6 +233,47 @@ fishClick fish fsRef = do
   modifyIORef fsRef (execState (fishSpeech p s bub))
   readIORef fsRef >>= print
 
+data Horiz = L
+           | R
+
+data Vert = U
+          | D
+
+
+-- Also return if need to flip ?
+-- | Get the place where the point needs to go
+getBubbleDirection :: Pos          -- ^ Current fish position
+                   -> (Int, Int)   -- ^ Size of the bubble
+                   -> State FishState (BubblePos, Bool)
+getBubbleDirection p@(x,y) (bw, bh) = do
+  (sw, sh) <- gets screenSize
+  bckw     <- gets backwards
+  let l = x >= bw
+      r = x + bw <= sw   -- TODO: Account for bubble placement towards mouth
+
+      u = y <= 0
+      d = y + bh <= sh
+
+     -- Second item is if a flip is needed
+      horiz | bckw      = if l then (R,False) else (L, True)
+            | otherwise = if r then (L,False) else (R, True)
+
+      vert = if u then D else U  -- perfer upper bubble
+
+  -- This is stupid. Come up with something better later
+      dir | (R,_) <- horiz, U <- vert = UpperRight
+          | (L,_) <- horiz, U <- vert = UpperLeft
+          | (L,_) <- horiz, D <- vert = LowerLeft
+          | (R,_) <- horiz, D <- vert = LowerRight
+
+  return (dir, snd horiz)
+  {-
+      dir | bckw && l && u     = LowerRight
+          | fw   && r && u     = LowerLeft
+          | fw   && r && not u = UpperLeft
+          | bckw && l && not u
+-}
+
 
 -- | Create a new speech bubble window, displaying a fortune from
 -- fortune. The window is not placed or displayed on the screen. The
