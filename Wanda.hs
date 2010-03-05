@@ -28,7 +28,8 @@ import System.Console.GetOpt
 
 import Debug.Trace
 
-
+-- | The normal Wanda picture, free of the hassles of installing
+-- files.
 foreign import ccall "wanda_image.h &wandaimage"
   wandaImage :: Ptr InlineImage
 
@@ -42,20 +43,20 @@ type FishFrame = (Pixbuf, Bitmap)
 -- wanda schools moving in same general way?
 
 -- | Track the state of the fish
-data FishState = FishState { dest :: !Pos,
-                             curFrame :: !Int,
-                             frameN :: !Int,
-                             backwards :: !Bool,
-                             speed :: !Int,
-                             origSpeed :: !Int,
-                             rndGen :: PureMT,
-                             speaking :: !Bool,
-                             screenSize :: !(Int,Int),
-                             frameSize :: !(Int,Int),
-                             frames :: Array Int FishFrame,
-                             backFrames :: Array Int FishFrame,
-                             fishWin :: Fish,
-                             speechBubble :: Maybe Window
+data FishState = FishState { dest :: !Pos,         -- ^ Current destination
+                             curFrame :: !Int,     -- ^ Current frame index
+                             frameN :: !Int,       -- ^ Total number of frames in the animation
+                             backwards :: !Bool,   -- ^ If traveling backwards or not
+                             speed :: !Int,        -- ^ Current speed Wanda is traveling
+                             origSpeed :: !Int,    -- ^ The original speed
+                             rndGen :: PureMT,     -- ^ Random nubmer generator for this fish
+                             speaking :: !Bool,    -- ^ Whether the fish is speaking
+                             screenSize :: !(Int,Int),  -- ^ Size of the screen the fish is on
+                             frameSize :: !(Int,Int),   -- ^ Height and width of the individual frames
+                             frames :: Array Int FishFrame,  -- ^ Frames with fish facing left
+                             backFrames :: Array Int FishFrame, -- ^ Frames with fish facing right
+                             fishWin :: Fish,                   -- ^ The fish's window
+                             speechBubble :: Maybe Window       -- ^ The speech bubble window
                            }
 
 
@@ -86,7 +87,7 @@ defaultTimeout = 100
 --fishScale = Just 0.5
 --fishScale = Nothing
 
-
+-- | Default fish options
 defaultOptions :: FishOpts
 defaultOptions = FishOpts { optScale = Nothing,
                             optIniSpeed = defaultSpeed,
@@ -96,7 +97,7 @@ defaultOptions = FishOpts { optScale = Nothing,
                             optTimeout = 100
                           }
 
-
+-- | Command line arguments for Wanda.
 options :: [OptDescr (FishOpts -> FishOpts)]
 options =
   [ Option ['m']     ["display-message"]
@@ -121,7 +122,6 @@ options =
   , Option ['f']     ["fast-velocity"]
     (OptArg (\str opts -> opts { optIniSpeed = maybe (2*defaultSpeed) read str } ) "Running speed")
     "Running away speed"
-
   ]
 
 wandaOpts :: IO FishOpts
@@ -174,14 +174,21 @@ unsetSpeaking p = newDest p >> modify (\s -> s { speaking = False,
                                                  speed = origSpeed s
                                                })
 
-
-bubbleClick :: Window -> IORef FishState -> IO ()
+-- | Handler for clicking on the bubble, which destroys the speech
+-- bubble and resumes fish movement.
+bubbleClick :: Window           -- ^ The speech bubble's window
+            -> IORef FishState  -- ^ The mutable state of the fish
+            -> IO ()
 bubbleClick win ref = do
   p <- windowGetPosition =<< fishWin <$> readIORef ref
   modifyIORef ref (execState (unsetSpeaking p))
   widgetDestroy win
 
-bubblePosition :: (Int, Int) -> Pos -> State FishState (Maybe Pos)
+-- | Calculate whether to place the speech bubble. Evaluates to
+-- Nothing if the fish is not in place and ready to speak.
+bubblePosition :: (Int, Int)     -- ^ Speech bubble window dimensions
+               -> Pos            -- ^ Position of the fish
+               -> State FishState (Maybe Pos)  -- ^ Position to place the bubble, if ready
 bubblePosition (w, h) (x,y) = do
   spd <- gets speed
   spk <- gets speaking
@@ -191,7 +198,9 @@ bubblePosition (w, h) (x,y) = do
              else Nothing
 
 
-
+-- | Handler for clicking on the fish. Depending on the mode Wanda is
+-- in, this could mean displaying a fortune in a speech bubble, or
+-- running quickly off the screen.
 fishClick :: Fish -> IORef FishState -> IO ()
 fishClick fish fsRef = do
   putStrLn "LOL"
@@ -203,7 +212,10 @@ fishClick fish fsRef = do
   readIORef fsRef >>= print
 
 
-
+-- | Create a new speech bubble window, displaying a fortune from
+-- fortune. The window is not placed or displayed on the screen. The
+-- bubble has the text centered, and has the pointy part in the lower
+-- right corner.
 createSpeechBubble :: IORef FishState -> IO Window
 createSpeechBubble ref = do
   -- Wanda speaks. Figure out the size of the window from the size.
@@ -216,7 +228,6 @@ createSpeechBubble ref = do
 
   (PangoRectangle x y w' h',_) <- layoutGetExtents lay
 
-  --TODO: Some inconsistency with the pointy bit and stretching
   --extra space for the pointy bit, plus padding
   let wt = w' - x       -- width of the text
       ht = h' - y       -- height of the text
@@ -233,10 +244,7 @@ createSpeechBubble ref = do
       ww = floor $ boxw + px  -- Padded area + pointy bit, the whole surface
       wh = floor $ boxh + py
 
-
-
   putStrLn txt
-  print (ww,wh)
 
   win <- windowNew
   set win [ windowTitle := "Wanda the Fish Says",
@@ -265,31 +273,40 @@ createSpeechBubble ref = do
 
   return win
 
--- | Sets the font, and returns the font size
-setFont :: PangoLayout -> IO Double
+-- | Sets the font of the layout, and returns the font size
+setFont :: PangoLayout  -- ^ The layout to set the font of
+        -> IO Double    -- ^ The font size
 setFont lay = do
   fd <- fontDescriptionFromString "sans monospace 10"
   fontDescriptionSetWeight fd WeightBold
   layoutSetFontDescription lay (Just fd)
   fromJust <$> fontDescriptionGetSize fd
 
--- layout, width and height of the box area, x and y offsets to put the layout on the bubble
-drawSpeech :: PangoLayout -> Double -> Double -> Double -> Double -> Double -> Double -> Double -> EventM EExpose Bool
+-- | Drawing function for the speech bubble.
+drawSpeech :: PangoLayout   -- ^ Layout containing the fortune to display
+           -> Double        -- ^ Width of the box area
+           -> Double        -- ^ Height of the box area
+           -> Double        -- ^ Offset / padding / margin in the x direction
+           -> Double        -- ^ Offset / padding / margin in the y direction
+           -> Double        -- ^ Distance in the x direction for the point
+           -> Double        -- ^ Distance in the y direction for the point
+           -> Double        -- ^ What point the pointy part should come back to on the bubble
+           -> EventM EExpose Bool
 drawSpeech lay w h xoff yoff px py rpx = do
   win <- eventWindow
   liftIO $ do
     renderWithDrawable win $ do
-      -- fill the bubble background
+      -- Fill the bubble background
       setSourceRGBA 0.8 0.8 1 0.85
       setOperator OperatorSource
 
-      -- draw the border
+      -- Draw the border
       setSourceRGB 0 0 0
       setLineWidth 0
       setLineCap LineCapRound
       setLineJoin LineJoinRound
 
-      let r = 40
+      let r = 40  -- Arbitrary number
           x = 0
           y = 0
 
@@ -321,8 +338,6 @@ drawSpeech lay w h xoff yoff px py rpx = do
 
   return True
 
-
-
 -- | Set a widget to use an RGBA colormap
 setAlpha :: (WidgetClass widget) => widget -> IO ()
 setAlpha widget = do
@@ -346,7 +361,10 @@ transparentBG dw = renderWithDrawable dw drawTransparent
 -- facing Pixbufs arrays, scaling the image by a factor. Left array
 -- has left facing fishes (backwards). Right array has right going
 -- fishes.
-splitStrip :: Maybe Double -> Int -> Pixbuf -> IO (Array Int FishFrame, Array Int FishFrame)
+splitStrip :: Maybe Double     -- ^ A scale to use. If @Nothing@ the image is left its original size
+           -> Int              -- ^ Number of frames contained in the strip
+           -> Pixbuf           -- ^ The source image
+           -> IO (Array Int FishFrame, Array Int FishFrame)  -- ^ Resulting arrays
 splitStrip scale n img = do
   w <- pixbufGetWidth img
   h <- pixbufGetHeight img
@@ -373,7 +391,7 @@ splitStrip scale n img = do
 
 
 -- | Change direction. This prevents a possible discontinuity in the
--- animation
+-- animation.
 swapDirection :: State FishState ()
 swapDirection = do
   trace "Swapping direction" return ()
@@ -393,12 +411,16 @@ swapDirection = do
 setBackwards :: State FishState ()
 setBackwards = unlessM backwards swapDirection
 
+-- | Set the fish state to speaking. This means Wanda is facing left
+-- for the speech bubble, and stops moving.
 setInSpeakingPos :: State FishState ()
-setInSpeakingPos = trace "Setting in speaking pos:" setBackwards >> setTempSpeed 0
+setInSpeakingPos = setBackwards >> setTempSpeed 0
 
 -- Fish tick? Fish stick?
--- | Main fish state change function
-fishTick :: Pos -> State FishState Pos
+-- | Main fish state change function. Returns the update state and new
+-- position to set.
+fishTick :: Pos    -- ^ The current position of the fish
+         -> State FishState Pos
 fishTick p@(x,y) = do
   spd     <- gets speed
   d@(t,_) <- gets dest
@@ -424,9 +446,6 @@ fishTick p@(x,y) = do
 
   updateFrame
   fishAct
-
-
-
 
 
 -- | Move the current frame to the next depending on the direction of
@@ -484,7 +503,10 @@ dist (x1,y1) (x2,y2) = round . sqrt . fromIntegral $ (x1 - x2)^2 + (y1 - y2)^2
 
 -- | Approximate a dx/dy vector of ~length d from the first point to
 -- the second with a ratio depending on the distance to be traveled.
-vec :: Int -> Pos -> Pos -> Vec
+vec :: Int   -- ^ The approximate length of the vector to produce
+    -> Pos   -- ^ Starting point
+    -> Pos   -- ^ Ending point
+    -> Vec   -- ^ Resulting (dx, dy) vector from point 1 to point 2
 vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
                             b = fromIntegral (y2 - y1)
                             k = abs (b / a)
@@ -506,9 +528,10 @@ vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
 --TODO: dx, dy configurable speed maybe
 
 
-
 --TODO: Exceptions
 
+-- | Produce a new mersenne-random-pure64 random number generator,
+-- seeding from /dev/urandom.
 newPureMTSysSeed :: IO PureMT
 newPureMTSysSeed = do
   h <- openBinaryFile "/dev/urandom" ReadMode
@@ -517,8 +540,11 @@ newPureMTSysSeed = do
   hClose h
   return (pureMT x)
 
-
-randomIntR :: (Int, Int) -> PureMT -> (Int, PureMT)
+-- | Generate a random integer in the given range using
+-- mersenne-random-pure64. I don't understand why that doesn't have
+-- such a function already.
+randomIntR :: (Int, Int)  -- ^ The range to use
+           -> PureMT -> (Int, PureMT)
 randomIntR (l,u) s = let n = u - l + 1
                          (v, s') = randomInt s
                      in (l + v `mod` n, s')
@@ -559,15 +585,19 @@ restoreSpeed :: State FishState ()
 restoreSpeed = modify (\s -> s { speed = origSpeed s })
 
 --FIXME: Some redundancy with newDest and stuff
+
 -- | Current position -> Desired position
+-- Set the new destination, with figuring out if this is backwards.
 setDest :: Pos -> Pos -> State FishState ()
 setDest (cx,_) p@(px,_) = modify (\s -> s { dest = p,
                                             backwards = px < cx })
 
 maybeIO = maybe (return ())
 
-
-moveBub :: Pos -> FishState -> IO ()
+-- | Move the speech bubble
+moveBub :: Pos        -- ^ The current position of the fish
+        -> FishState  -- ^ The fish state
+        -> IO ()
 moveBub p st = maybeIO (\w -> do
                            ws <- windowGetSize w
                            maybeIO (\b -> move w b >> widgetShowAll w)
@@ -576,7 +606,10 @@ moveBub p st = maybeIO (\w -> do
 
 -- | Perform the IO needed for a fish update, i.e. move the window and
 -- update the image
-fishIO :: Image -> Fish -> IORef FishState -> IO Bool
+fishIO :: Image            -- ^ The fish image widget
+       -> Fish             -- ^ The fish window
+       -> IORef FishState  -- ^ The mutable fish state
+       -> IO Bool          -- ^ Continue the signal
 fishIO img win ref = do
   r  <- windowGetPosition win
 
@@ -625,12 +658,14 @@ randomPair g xBnds yBnds = let (x, g')  = randomIntR xBnds g
                                (y, g'') = randomIntR yBnds g'
                            in ((x,y), g'')
 
+-- | Convenience for timeoutAdd
 every = flip timeoutAdd
 
 -- | Get the screen size as a pair
 getScreenSize :: Screen -> IO (Int, Int)
 getScreenSize scr = liftA2 (,) (screenGetWidth scr) (screenGetHeight scr)
 
+-- | Get the height and width of a pixbuf for convenience
 pixbufGetSize :: Pixbuf -> IO (Int, Int)
 pixbufGetSize p = liftA2 (,) (pixbufGetWidth p) (pixbufGetHeight p)
 
@@ -638,7 +673,8 @@ pixbufGetSize p = liftA2 (,) (pixbufGetWidth p) (pixbufGetHeight p)
 fishFrames :: Maybe Double -> IO (Array Int FishFrame, Array Int FishFrame)
 fishFrames scale = splitStrip scale fishCount =<< pixbufNewFromInline wandaImage
 
-
+-- | Get the Bitmap for a pixbuf to allow clickthrough of transparent
+-- parts.
 getMask :: Pixbuf -> IO Bitmap
 getMask pb = do
   w <- pixbufGetWidth  pb
@@ -650,7 +686,9 @@ getMask pb = do
 
 
 -- | Takes the (forward frames, backward frames) and creates a new wanda window
-createWanda :: FishOpts -> (Array Int FishFrame, Array Int FishFrame) -> IO Fish
+createWanda :: FishOpts  -- ^ Options for the fish
+            -> (Array Int FishFrame, Array Int FishFrame)  -- ^ The forward and backwards frame arrays
+            -> IO Fish    -- ^ A new fish window
 createWanda o (bckFrames, fwdFrames) = do
   img <- imageNew
   widgetSetDoubleBuffered img True
@@ -726,11 +764,11 @@ createWanda o (bckFrames, fwdFrames) = do
   every (optTimeout o) (fishIO img win fishRef)
 
   on win buttonPressEvent $
-    tryEvent $ liftIO $ putStrLn "WOW" >> fishClick win fishRef
+    tryEvent $ liftIO $ putStrLn "Fishclick!" >> fishClick win fishRef
 
   return win
 
-
+-- | Main is main. Make Wanda go.
 main :: IO ()
 main = do
   initGUI
@@ -738,10 +776,6 @@ main = do
   fr <- fishFrames (optScale o)
 
   replicateM_ (optNumFish o) (createWanda o fr)
-
-  --bub <- createSpeechBubble
-
-  --widgetShowAll bub
 
   mainGUI
 
