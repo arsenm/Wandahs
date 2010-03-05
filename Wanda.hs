@@ -139,18 +139,32 @@ unlessM acc f = do x <- gets acc
                    unless x f
 
 
--- Fish position, bubble size, bubble window
--- Unless the fish is already speaking, make it speak.
-fishSpeech :: Pos -> (Int, Int) -> Window -> State FishState ()
+-- | Unless the fish is already speaking, make it speak. This also
+-- selects a new destination which makes sure the speech bubble will
+-- be visible on screen.
+fishSpeech :: Pos                -- ^ Fish position
+           -> (Int, Int)         -- ^ Bubble size
+           -> Window             -- ^ Bubble window
+           -> State FishState ()
 fishSpeech p@(x,y) (bw, bh) bub =
   unlessM speaking $ do
-    --TODO: right of the screen, y direction
-    --TODO: Minimum move neede
-    -- If the bubble will fit on the screen, stop moving here
+    (sw, sh) <- gets screenSize
+    let pad = 50    -- for a little extra space at the edge of screen
+
+        newx | x >= sw   = sw - pad
+             | x <= bw   = bw + pad
+             | otherwise = x
+
+        newy | y >= sh   = sh - pad
+             | y <= bh   = bh + pad
+             | otherwise = y
+
     setSpeaking bub
-    if x < bw || y < bh
-      then setDest p (bw + 20, bh + 20)
-      else setInSpeakingPos
+
+  -- If the bubble will fit on the screen, stop moving here
+    if x > bw && y > bh && x < sw && y < sh
+      then setInSpeakingPos
+      else setDest p (newx, newy)
 
 --FIXME: Backwards setting broken
 -- | No longer speaking, so choose a new direction and destroy the bubble
