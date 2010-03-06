@@ -202,11 +202,6 @@ data Bubble = Bubble { bubbleWindow :: Window,
                      }
 -}
 
-data Horiz = L
-           | R
-
-data Vert = U
-          | D
 
 -- | Read an initial state from an IORef, run through the state
 -- monad. Update the state of the state monad to the resulting state,
@@ -226,7 +221,7 @@ execIOState ref m = modifyIORef ref (execState m)
 addBubble :: Pos             -- ^ Current fish position
           -> (Int, Int)      -- ^ Size of the bubble
           -> Bubble          -- ^ The bubble
-          -> State FishState BubblePos
+          -> State FishState BubbleDir
 addBubble p@(x,y) b@(bw, bh) bub = do
   (sw, sh) <- gets screenSize
   bckw     <- gets backwards
@@ -246,17 +241,13 @@ addBubble p@(x,y) b@(bw, bh) bub = do
 
       vert = if u then D else U  -- perfer upper bubble
 
-  -- This is stupid. Come up with something better later
-      dir | (R,_) <- horiz, U <- vert = UpperRight
-          | (L,_) <- horiz, U <- vert = UpperLeft
-          | (L,_) <- horiz, D <- vert = LowerLeft
-          | (R,_) <- horiz, D <- vert = LowerRight
+
 
   -- update the fish state if we need to turn around.
   when (snd horiz) swapDirection
   setSpeaking bub
+  return (Dir (fst horiz) vert)
 
-  return dir
   {-
       dir | bckw && l && u     = LowerRight
           | fw   && r && u     = LowerLeft
@@ -306,8 +297,8 @@ createSpeechBubble ref pos = do
             windowDecorated := False,
             windowTypeHint := WindowTypeHintDock, -- Dock
             windowGravity := GravityStatic,     -- Importantish.
-            windowDefaultWidth := ww + 40,
-            windowDefaultHeight := wh + 40,
+            windowDefaultWidth := ww,
+            windowDefaultHeight := wh,
             windowAcceptFocus := True, -- False?
             windowResizable := True, -- False
             windowSkipTaskbarHint := True,
@@ -343,11 +334,14 @@ setFont lay = do
   fromJust <$> fontDescriptionGetSize fd
 
 -- | Position of the pointy part
-data BubblePos = UpperLeft
-               | UpperRight
-               | LowerRight
-               | LowerLeft
-               deriving (Eq, Ord, Show, Enum)
+data BubbleDir = Dir Horiz Vert
+               deriving (Eq)
+
+-- | Point on Left or Right
+data Horiz = L | R deriving (Eq)
+
+-- | Point on upper or lower corner
+data Vert = U | D deriving (Eq)
 
 
 -- | Drawing function for the speech bubble.
@@ -360,7 +354,7 @@ drawSpeech :: PangoLayout   -- ^ Layout containing the fortune to display
            -> Double        -- ^ Distance in the y direction for the point
            -> Double        -- ^ What point the pointy part should come back to on the bubble
            -> Double        -- ^ What point the pointy part should come back to on the bubble
-           -> BubblePos     -- ^ Which way the point goes
+           -> BubbleDir     -- ^ Which way the point goes
            -> EventM EExpose Bool
 drawSpeech lay w h xoff yoff px py rpx rpy dir = do
   win <- eventWindow
@@ -368,15 +362,14 @@ drawSpeech lay w h xoff yoff px py rpx rpy dir = do
       x = 0
       y = 0
 
-      --(bdr, tx, ty) = (upperLeftBubble, x+px+xoff, y+py+yoff)
-      (bdr, tx, ty) = (upperRightBubble, x+px, y+py+yoff)
-      --(bdr, tx, ty) = (rightBubble, x+xoff, y+yoff)
-  {-
-      (bdr, tx, ty) | dir == UpperRight || dir == LowerRight = (rightBubble, x+xoff, y+yoff)
-                    | otherwise = (leftBubble, x+px+xoff, y+yoff)
--}
+      -- The offset of the text must change depending on where the bubble is
+      (bdr, tx, ty) = case dir of
+                        Dir R U -> (ruBubble, x+px, y+py+yoff)
+                        Dir L U -> (luBubble, x+px+xoff, y+py+yoff)
+                        Dir R D -> (rdBubble, x+xoff, y+yoff)
+                        Dir L D -> (ldBubble, x+px+xoff, y+yoff)
 
-      upperRightBubble = do
+      ruBubble = do  -- Bubble with point on upper right corner
         -- start from upper right, below the point start
         moveTo (x+w) (y+py+rpy)
         lineTo (x+w) (y+py+h-r)
@@ -396,8 +389,7 @@ drawSpeech lay w h xoff yoff px py rpx rpy dir = do
         -- pointy bit in upper right
         lineTo (x+w+px) y
 
-
-      upperLeftBubble = do
+      luBubble = do  -- Bubble with point on upper left corner
         -- Start from upper left
         moveTo (x+px+rpx) (y+py)
         lineTo (x+px+w-r) (y+py)
@@ -417,10 +409,7 @@ drawSpeech lay w h xoff yoff px py rpx rpy dir = do
         -- pointy bit
         lineTo x y
 
-
-
-      -- Draw a speech bubble with point on the left
-      leftBubble = do
+      ldBubble = do        -- Draw a speech bubble with point on the lower left
         -- Start from lower left
         moveTo (x+px) (y + h - py)
         lineTo (x+px) (y+r)
@@ -440,8 +429,7 @@ drawSpeech lay w h xoff yoff px py rpx rpy dir = do
         -- pointy bit
         lineTo x (y+h+py)
 
-      -- Draw a speech bubble with point on the right
-      rightBubble = do
+      rdBubble = do        -- Draw a speech bubble with point on the lower right
         -- start from bottom left
         moveTo (x+w-rpx) (y+h)
         lineTo (x+r) (y+h)
@@ -480,11 +468,9 @@ drawSpeech lay w h xoff yoff px py rpx rpy dir = do
         setSourceRGB 0.1 0.1 0.1
 
         moveTo tx ty
-        showLayout lay            -- FIXME: this needs to be shifted for left bubble more right
+        showLayout lay
 
   liftIO $ renderWithDrawable win (drawBubble bdr)
-
-
   return True
 
 -- | Set a widget to use an RGBA colormap
