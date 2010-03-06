@@ -221,39 +221,36 @@ execIOState ref m = modifyIORef ref (execState m)
 addBubble :: Pos             -- ^ Current fish position
           -> (Int, Int)      -- ^ Size of the bubble
           -> Bubble          -- ^ The bubble
-          -> State FishState BubbleDir
+          -> State FishState (BubbleDir, Pos)
 addBubble p@(x,y) b@(bw, bh) bub = do
   (sw, sh) <- gets screenSize
   bckw     <- gets backwards
-  (fw,fh) <- gets frameSize
+  (fw, fh) <- gets frameSize
 
   --FIXME: THE DEST IS A LIE!!! Dependent on the direction and stuff.
-  let dest = (x - bw + (2 * fw) `div` 11, y - bh + (5 * fh `div` 7))
-      l = x >= bw
-      r = x + bw <= sw   -- TODO: Account for bubble placement towards mouth
+  -- TODO: Account for bubble placement towards mouth
+  let l = x >= bw        -- Will fit towards the left
+      r = x + bw <= sw   -- Will fit towards the right
 
-      u = y <= 0
-      d = y + bh <= sh
+      u = y >= bh        -- Will fit above
+      d = y + bh <= sh   -- Will fit below
 
-     -- Second item is if a flip is needed
+     -- Prefer left/right in same direction as travel. Second item is
+     -- if a flip is needed
       horiz | bckw      = if l then (R, False) else (L, True)
             | otherwise = if r then (L, False) else (R, True)
 
-      vert = if u then D else U  -- perfer upper bubble
+      vert = if u then D else U  -- prefer upper bubbles
 
+      bp = if l   -- Positioning of the bubble towards the mouth etc.
+             then (x - bw + (2 * fw) `div` 11, y - bh + (5 * fh `div` 7))
+             else (x + (2 * fw) `div` 11, y - bh + (5 * fh `div` 7))
 
-
-  -- update the fish state if we need to turn around.
+  -- Update the fish state if we need to turn around.
   when (snd horiz) swapDirection
   setSpeaking bub
-  return (Dir (fst horiz) vert)
+  return (Dir (fst horiz) vert, bp)
 
-  {-
-      dir | bckw && l && u     = LowerRight
-          | fw   && r && u     = LowerLeft
-          | fw   && r && not u = UpperLeft
-          | bckw && l && not u
--}
 
 --TODO: Pass remaining options given to fortune
 
@@ -314,7 +311,9 @@ createSpeechBubble ref pos = do
 
   -- Add the bubble to the fish. Also figures out the direction to
   -- draw the speech bubble.
-  dir <- runIOState ref (addBubble pos (ww,wh) win)
+  (dir, bp) <- runIOState ref (addBubble pos (ww,wh) win)
+
+  move win bp
 
   win `on` buttonPressEvent $
     tryEvent $ liftIO $ bubbleClick win ref
@@ -580,19 +579,22 @@ fishTick p@(x,y) = do
       stuck   = dx == 0 && dy == 0
       --CHECKME: Can stuck actually happen?
 
-      -- Wanda swims in place when speaking
-      fishAct | spk && close = setInSpeakingPos >> return p
-              | spd /= 0     = do
-                           -- Not on same side after moving, so turned around
-                              when ( (t < x) /= (t < x') ) swapDirection
+      fishMove = do
+        -- Not on same side after moving, so turned around
+        when ( (t < x) /= (t < x') ) swapDirection
 
-                           -- Avoid getting stuck, and get close enough
-                              when (stuck || close) (newDest p')
-                              return p'
-              | otherwise    = return p -- speed == 0, stay in place
+       -- Avoid getting stuck, and get close enough
+        when (stuck || close) (newDest p')
+        return p'
 
   updateFrame
-  fishAct
+
+  if spk    -- Wanda swims in place when speaking
+     then return p
+     else fishMove
+
+
+
 
 
 -- | Move the current frame to the next depending on the direction of
