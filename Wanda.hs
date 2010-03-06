@@ -294,6 +294,7 @@ createSpeechBubble ref pos = do
       px  = boxw / 10    -- pointy bit
       py  = boxh / 5
       rpx = xoff         -- how far back to the side for it
+      rpy = yoff
 
       ww = floor $ boxw + px  -- Padded area + pointy bit, the whole surface
       wh = floor $ boxh + py
@@ -327,7 +328,7 @@ createSpeechBubble ref pos = do
   win `on` buttonPressEvent $
     tryEvent $ liftIO $ bubbleClick win ref
 
-  win `on` exposeEvent $ drawSpeech lay boxw boxh xoff yoff px py rpx dir
+  win `on` exposeEvent $ drawSpeech lay boxw boxh xoff yoff px py rpx rpy dir
 
   widgetShowAll win
   return win
@@ -358,16 +359,42 @@ drawSpeech :: PangoLayout   -- ^ Layout containing the fortune to display
            -> Double        -- ^ Distance in the x direction for the point
            -> Double        -- ^ Distance in the y direction for the point
            -> Double        -- ^ What point the pointy part should come back to on the bubble
+           -> Double        -- ^ What point the pointy part should come back to on the bubble
            -> BubblePos     -- ^ Which way the point goes
            -> EventM EExpose Bool
-drawSpeech lay w h xoff yoff px py rpx dir = do
+drawSpeech lay w h xoff yoff px py rpx rpy dir = do
   win <- eventWindow
   let r = 40  -- Arbitrary number
       x = 0
       y = 0
 
+      (bdr, tx, ty) = (upperLeftBubble, x+px+xoff, y+py+yoff)
+  {-
       (bdr, tx, ty) | dir == UpperRight || dir == LowerRight = (rightBubble, x+xoff, y+yoff)
                     | otherwise = (leftBubble, x+px+xoff, y+yoff)
+-}
+
+      upperLeftBubble = do
+        -- Start from upper left
+        moveTo (x+px+rpx) (y+py)
+        lineTo (x+px+h) (y+py)
+
+        -- Curve down on the upper right
+        curveTo (x+px+w) (y+py) (x+px+w) (y+py) (x+px+w) ((y+py)+r)
+        lineTo (x+px+w) ((y+py)+h-r)
+
+        -- Curve back to the left on the lower right corner
+        curveTo (x+px+w) ((y+py)+h) (x+px+w) ((y+py)+h) (x+px+w-r) ((y+py)+h)
+        lineTo (x+px+rpx) ((y+py)+h)
+
+        -- curve on lower left corner
+        curveTo (x+px) ((y+py)+h) (x+px) ((y+py)+h) (x+px) ((y+py)+h-r)
+        lineTo (x+px) ((y+py)+rpy)
+
+        -- pointy bit
+        lineTo x y
+
+
 
       -- Draw a speech bubble with point on the left
       leftBubble = do
@@ -401,6 +428,8 @@ drawSpeech lay w h xoff yoff px py rpx dir = do
         -- upper left
         curveTo x y x y (x+r) y
         lineTo (x+w-r) y
+
+        -- upper right
         curveTo (x+w) y (x+w) y (x+w) (y+r)
 
         -- pointy bit
