@@ -212,6 +212,11 @@ runIOState ref f = do
 -- | Use an initial state read from an ioref, and update after.
 execIOState ref m = modifyIORef ref (execState m)
 
+
+--FIXME: The bubble placement could be smarter. There are also cases
+--with very large fortunes (which are pretty rare) that without
+--moving, the bubble can't fit on screen. Maybe scale the text?
+
 -- | Adds a bubble to the given fish state.  Returns the place where
 -- the point needs to go.
 addBubble :: Pos             -- ^ Current fish position
@@ -223,13 +228,12 @@ addBubble p@(x,y) b@(bw, bh) bub = do
   bckw     <- gets backwards
   (fw, fh) <- gets frameSize
 
-  --FIXME: THE DEST IS A LIE!!! Dependent on the direction and stuff.
   -- TODO: Account for bubble placement towards mouth
-  let l = x >= bw        -- Will fit towards the left
-      r = x + bw <= sw   -- Will fit towards the right
+  let l = x >= bw             -- Will fit towards the left
+      r = x + bw + fw <= sw   -- Will fit towards the right
 
-      u = y >= bh        -- Will fit above
-      d = y + bh <= sh   -- Will fit below
+      u = y >= bh             -- Will fit above
+      d = y + bh + fh <= sh   -- Will fit below
 
      -- Prefer left/right in same direction as travel. Second item is
      -- if a flip is needed
@@ -241,12 +245,14 @@ addBubble p@(x,y) b@(bw, bh) bub = do
 
      -- Positioning of the bubble towards the mouth etc.
       bp = (bx,by)
+      mfx = (2 * fw) `div` 11  -- Mouth seems to be 2/11ths across the frame
+      mfy = (5 * fh) `div` 7   -- Mouth seems about 5/7s down the frame
       bx = if horiz == L  -- The bubble points left, so put bubble on the right of Wanda.
-              then x + fw -- - (2 * fw) `div` 11  -- Mouth seems to be 2/11ths across frame
-              else x - bw -- + (2 * fw) `div` 11
-      by = if vert == U   -- Point is up, so put down
-             then y + fh --  + (5 * fh `div` 7)
-             else y - bh -- - bh + (5 * fh `div` 7)
+              then x + fw - mfx
+              else x - bw + mfx
+      by = if vert == D   -- Point is down, so shift up
+             then y - bh + mfy
+             else y + fh - mfy
 
   -- Update the fish state if we need to turn around.
   when (snd horizF) swapDirection
