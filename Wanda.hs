@@ -368,12 +368,34 @@ drawSpeech lay w h xoff yoff px py rpx rpy dir = do
       x = 0
       y = 0
 
-      (bdr, tx, ty) = (upperLeftBubble, x+px+xoff, y+py+yoff)
+      --(bdr, tx, ty) = (upperLeftBubble, x+px+xoff, y+py+yoff)
+      (bdr, tx, ty) = (upperRightBubble, x+px, y+py+yoff)
       --(bdr, tx, ty) = (rightBubble, x+xoff, y+yoff)
   {-
       (bdr, tx, ty) | dir == UpperRight || dir == LowerRight = (rightBubble, x+xoff, y+yoff)
                     | otherwise = (leftBubble, x+px+xoff, y+yoff)
 -}
+
+      upperRightBubble = do
+        -- start from upper right, below the point start
+        moveTo (x+w) (y+py+rpy)
+        lineTo (x+w) (y+py+h-r)
+
+        -- Curve on lower right corner
+        curveTo (x+w) (y+py+h) (x+w) (y+py+h) (x+w-r) (y+py+h)
+        lineTo (x+px) (y+py+h)
+
+        -- Curve on lower left corner
+        curveTo x ((y+py)+h) x ((y+py)+h) x ((y+py)+h-r)
+        lineTo x (y+py+r)
+
+        -- Curve on upper left
+        curveTo x (y+py) x (y+py) (x+r) (y+py)
+        lineTo (x+w-rpx) (y+py)
+
+        -- pointy bit in upper right
+        lineTo (x+w+px) y
+
 
       upperLeftBubble = do
         -- Start from upper left
