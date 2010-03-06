@@ -156,10 +156,6 @@ wandaOpts = do
     (_, _, errs) -> ioError (userError (concat errs ++ usageInfo header options))
       where header = "Usage: " ++ pn ++ " [OPTION...] files..."
 
--- | unless, but with the condition in the monad
-unlessM acc f = do x <- gets acc
-                   unless x f
-
 
 --FIXME: Backwards setting broken
 -- | No longer speaking, so choose a new direction and destroy the bubble
@@ -221,7 +217,7 @@ execIOState ref m = modifyIORef ref (execState m)
 addBubble :: Pos             -- ^ Current fish position
           -> (Int, Int)      -- ^ Size of the bubble
           -> Bubble          -- ^ The bubble
-          -> State FishState (BubbleDir, Pos)
+          -> State FishState (BubbleDir, Pos) -- ^ Where the bubble should be placed on screen, and point direction
 addBubble p@(x,y) b@(bw, bh) bub = do
   (sw, sh) <- gets screenSize
   bckw     <- gets backwards
@@ -237,19 +233,25 @@ addBubble p@(x,y) b@(bw, bh) bub = do
 
      -- Prefer left/right in same direction as travel. Second item is
      -- if a flip is needed
-      horiz | bckw      = if l then (R, False) else (L, True)
-            | otherwise = if r then (L, False) else (R, True)
+      horizF | bckw      = if l then (R, False) else (L, True)
+             | otherwise = if r then (L, False) else (R, True)
 
       vert = if u then D else U  -- prefer upper bubbles
+      horiz = fst horizF
 
-      bp = if l   -- Positioning of the bubble towards the mouth etc.
-             then (x - bw + (2 * fw) `div` 11, y - bh + (5 * fh `div` 7))
-             else (x + (2 * fw) `div` 11, y - bh + (5 * fh `div` 7))
+     -- Positioning of the bubble towards the mouth etc.
+      bp = (bx,by)
+      bx = if horiz == L  -- The bubble points left, so put bubble on the right of Wanda.
+              then x + fw -- - (2 * fw) `div` 11  -- Mouth seems to be 2/11ths across frame
+              else x - bw -- + (2 * fw) `div` 11
+      by = if vert == U   -- Point is up, so put down
+             then y + fh --  + (5 * fh `div` 7)
+             else y - bh -- - bh + (5 * fh `div` 7)
 
   -- Update the fish state if we need to turn around.
-  when (snd horiz) swapDirection
+  when (snd horizF) swapDirection
   setSpeaking bub
-  return (Dir (fst horiz) vert, bp)
+  return (Dir horiz vert, bp)
 
 
 --TODO: Pass remaining options given to fortune
@@ -552,21 +554,12 @@ swapDirection = do
   modify (\s -> s { backwards = not bw,
                     curFrame  = i' })
 
--- | Set Wanda pointing left, unless she's already pointing that way
---   Wanda must point left for the bubble
-setBackwards :: State FishState ()
-setBackwards = unlessM backwards swapDirection
-
--- | Set the fish state to speaking. This means Wanda is facing left
--- for the speech bubble, and stops moving.
-setInSpeakingPos :: State FishState ()
-setInSpeakingPos = setBackwards >> setTempSpeed 0
 
 -- Fish tick? Fish stick?
 -- | Main fish state change function. Returns the update state and new
 -- position to set.
-fishTick :: Pos    -- ^ The current position of the fish
-         -> State FishState Pos
+fishTick :: Pos                 -- ^ The current position of the fish
+         -> State FishState Pos -- ^ The new position of the fish
 fishTick p@(x,y) = do
   spd     <- gets speed
   d@(t,_) <- gets dest
@@ -714,12 +707,6 @@ getFrame s = let arr = if backwards s
 move :: Fish -> Pos -> IO ()
 move = uncurry . windowMove
 
-swapMaybe x = maybe (Just x) (\_ -> Nothing)
-
-swapSpeaking :: Bubble -> State FishState ()
-swapSpeaking bub = modify (\s -> s { speaking = not (speaking s),
-                                     speechBubble =  swapMaybe bub (speechBubble s)
-                                   })
 
 setSpeaking :: Bubble -> State FishState ()
 setSpeaking bub = modify (\s -> s { speaking = True,
@@ -734,13 +721,6 @@ setTempSpeed spd = modify (\s -> s { origSpeed = speed s,
 restoreSpeed :: State FishState ()
 restoreSpeed = modify (\s -> s { speed = origSpeed s })
 
---FIXME: Some redundancy with newDest and stuff
-
--- | Current position -> Desired position
--- Set the new destination, with figuring out if this is backwards.
-setDest :: Pos -> Pos -> State FishState ()
-setDest (cx,_) p@(px,_) = modify (\s -> s { dest = p,
-                                            backwards = px < cx })
 
 -- | Perform the IO needed for a fish update, i.e. move the window and
 -- update the image
