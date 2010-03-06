@@ -370,43 +370,47 @@ drawSpeech lay w h xoff yoff px py rpx rpy dir = do
                         Dir L D -> (ldBubble, x+px+xoff, y+yoff)
 
       ruBubble = do  -- Bubble with point on upper right corner
-        let y' = y+py  -- Everything is shifted by the point's space
+        let y' = y + py  -- Everything is shifted by the point's space
+            x2 = x + w
+            y2 = y' + h
         -- start from upper right, below the point start
-        moveTo (x+w) (y'+ rpy)
-        lineTo (x+w) (y'+ h-r)
+        moveTo x2 (y'+ rpy)
+        lineTo x2 (y2-r)
 
         -- Curve on lower right corner
-        curveTo (x+w) (y' + h) (x+w) (y' + h) (x+w-r) (y+py+h)
-        lineTo (x+px) (y' + h)
+        curveTo x2 y2 x2 y2 (x2-r) y2
+        lineTo (x+px) y2
 
         -- Curve on lower left corner
-        curveTo x (y' + h) x (y' + h) x (y' + h -r)
+        curveTo x y2 x y2 x (y2 -r)
         lineTo x (y' + r)
 
         -- Curve on upper left
         curveTo x y' x y' (x+r) y'
-        lineTo (x+w-rpx) y'
+        lineTo (x2-rpx) y'
 
         -- pointy bit in upper right
-        lineTo (x+w+px) y
+        lineTo (x2+px) y
 
       luBubble = do  -- Bubble with point on upper left corner
         let x' = x + px
             y' = y + py
+            x2 = x' + w  -- upper limits of the box
+            y2 = y' + h
         -- Start from upper left
         moveTo (x' + rpx) y'
         lineTo (x' + w - r) y'
 
         -- Curve down on the upper right
-        curveTo (x' + w) y' (x' + w) y' (x' + w) (y' + r)
-        lineTo (x' + w) (y' + h - r)
+        curveTo x2 y' x2 y' x2 (y' + r)
+        lineTo x2 (y2 - r)
 
         -- Curve back to the left on the lower right corner
-        curveTo (x' + w) (y' + h) (x' + w) (y' + h) (x' + w - r) (y' + h)
-        lineTo (x' + rpx) (y' + h)
+        curveTo x2 y2 x2 y2 (x2 - r) y2
+        lineTo (x' + rpx) y2
 
         -- curve on lower left corner
-        curveTo x' (y'+h) x' (y' + h) x' (y' + h - r)
+        curveTo x' y2 x' y2 x' (y2 - r)
         lineTo x' (y' + rpy)
 
         -- pointy bit
@@ -414,42 +418,46 @@ drawSpeech lay w h xoff yoff px py rpx rpy dir = do
 
       ldBubble = do        -- Draw a speech bubble with point on the lower left
         let x' = x + px
+            x2 = x' + w
+            y2 = y + h
         -- Start from lower left
-        moveTo x (y + h - py)
-        lineTo x (y+r)
+        moveTo x' (y2 - py)
+        lineTo x' (y+r)
 
         -- Wrap around upper left corner
         curveTo x' y x' y (x' + r) y
         lineTo (x' + w - r) y
 
         -- Curve down on the upper right
-        curveTo (x' + w) y (x' + w) y (x' + w) (y+r)
-        lineTo (x' + w) (y+h-r)
+        curveTo x2 y x2 y x2 (y+r)
+        lineTo x2 (y2-r)
 
         -- Curve back to the left on the lower right corner
-        curveTo (x' + w) (y+h) (x+px+w) (y+h) (x' + w - r) (y+h)
-        lineTo (x' + rpx) (y+h)
+        curveTo x2 y2 x2 y2 (x2 - r) y2
+        lineTo (x' + rpx) y2
 
         -- pointy bit
-        lineTo x (y+h+py)
+        lineTo x (y2+py)
 
       rdBubble = do        -- Draw a speech bubble with point on the lower right
+        let y2 = y + h
+            x2 = x + w
         -- start from bottom left
-        moveTo (x+w-rpx) (y+h)
+        moveTo (x2-rpx) (y+h)
         lineTo (x+r) (y+h)
-        curveTo x (y+h) x (y+h) x (y+h-r)
+        curveTo x y2 x y2 x (y2-r)
         lineTo x (y+r)
 
         -- upper left
         curveTo x y x y (x+r) y
-        lineTo (x+w-r) y
+        lineTo (x2-r) y
 
         -- upper right
-        curveTo (x+w) y (x+w) y (x+w) (y+r)
+        curveTo x2 y x2 y x2 (y+r)
 
         -- pointy bit
-        lineTo (x+w) (y+h - yoff)
-        lineTo (x+w+px) (y+h+py)
+        lineTo x2 (y2 - rpy)
+        lineTo (x2+px) (y2+py)
 
       drawBubble bubblePath = do
         -- Fill the bubble background
