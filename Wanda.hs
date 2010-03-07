@@ -115,7 +115,7 @@ fishCount = 8
 fishHeight = 55
 fishWidth = 90
 
-defaultSpeed = 17
+defaultSpeed = 10
 defaultTimeout = 100
 defaultScale = Just 0.5
 -- Unfortunately the wrong kind of scale.
@@ -222,9 +222,7 @@ runAway :: IORef FishState -> Pos -> IO ()
 runAway ref p = execIOState ref (setRunning p)
 
 setRunning :: Pos -> State FishState ()
-setRunning p = do
-  setFastSpeed
-  newDest p
+setRunning p = setFastSpeed >> newOffscreenDest p
 
 
 
@@ -578,7 +576,6 @@ splitStrip scale n img = do
 -- animation.
 swapDirection :: State FishState ()
 swapDirection = do
-  trace "Swapping direction" return ()
   i  <- gets curFrame
   n  <- gets frameN
   bw <- gets backwards
@@ -634,6 +631,42 @@ updateFrame = do
   let i' = (i + 1) `mod` n
   modify (\s -> s { curFrame = i' })
 
+
+newOffscreenDest :: Pos -> State FishState ()
+newOffscreenDest (x,y) = do
+  (sx, sy) <- gets screenSize
+  gen      <- gets rndGen
+  oldBw    <- gets backwards
+  i        <- gets curFrame
+  n        <- gets frameN
+
+  -- Choose a location far away offscreen place towards the closest screen edge
+  let (tx1,ty1)   = (2 * sx, 2 * sy)
+      (tx2,ty2)   = (4 * sx, 4 * sy)
+      xBnds       = if dx2 < dx1
+                       then (sx + tx1, sx + tx2)
+                       else (negate tx2, negate tx1)
+      yBnds       = if dy2 < dy1
+                       then (sy + ty1, sy + ty2)
+                       else (negate ty2, negate ty1)
+      (loc, gen') = randomPair gen xBnds yBnds
+
+      dx1 = x       -- distance from left of screen
+      dx2 = sx - x  -- distance from right
+
+      dy1 = y       -- distance to top
+      dy2 = sy - y  -- distance to bottom
+
+      bw = fst loc < x
+      i' = if oldBw == bw
+             then i
+             else n - i - 1
+
+  modify (\s -> s { rndGen = gen',
+                    dest = loc,
+                    backwards = bw,
+                    curFrame = i'
+                  } )
 
 -- | Pick a new destination and Randomgen from the current position
 newDest :: Pos -> State FishState ()
