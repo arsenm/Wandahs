@@ -72,6 +72,7 @@ data FishState = FishState { dest :: !Pos,         -- ^ Current destination
                              backwards :: !Bool,   -- ^ If traveling backwards or not
                              speed :: !Int,        -- ^ Current speed Wanda is traveling
                              origSpeed :: !Int,    -- ^ The original speed
+                             fastSpeed :: !Int,    -- ^ The running away fast speed
                              rndGen :: PureMT,     -- ^ Random nubmer generator for this fish
                              speaking :: !Bool,    -- ^ Whether the fish is speaking
                              screenSize :: !(Int,Int),  -- ^ Size of the screen the fish is on
@@ -205,20 +206,27 @@ bubbleClick win ref = liftIO $ do
 -- | Handler for clicking on the fish. Depending on the mode Wanda is
 -- in, this could mean displaying a fortune in a speech bubble, or
 -- running quickly off the screen.
-fishClick :: Fish              -- ^ The fish window
-          -> IORef FishState   -- ^ The mutable fish state
-          -> [String]          -- ^ Additional arguments to pass to fortune
-          -> FishMode
+fishClick :: Fish                 -- ^ The fish window
+          -> IORef FishState      -- ^ The mutable fish state
+          -> [String]             -- ^ Additional arguments to pass to fortune
+          -> FishMode             -- ^ What the fish should do on click
           -> EventM EButton Bool
-fishClick fish fsRef args Fortunes = liftIO $ do
+fishClick fish fsRef args mode = liftIO $ do
   p <- windowGetPosition fish
-  -- Create speech bubble and add to the fish state
-  createSpeechBubble fsRef p args
+  case mode of
+    Fortunes -> createSpeechBubble fsRef p args >> return ()
+    Running  -> runAway fsRef p
   return True
 
-fishClick fish fsRef args Running = liftIO $ do
-  putStrLn "Implement me"
-  return True
+runAway :: IORef FishState -> Pos -> IO ()
+runAway ref p = execIOState ref (setRunning p)
+
+setRunning :: Pos -> State FishState ()
+setRunning p = do
+  setFastSpeed
+  newDest p
+
+
 
 -- | Read an initial state from an IORef, run through the state
 -- monad. Update the state of the state monad to the resulting state,
@@ -280,9 +288,10 @@ addBubble (x,y) (bw, bh) = do
   return (Dir horiz vert, bp)
 
 -- | Create a new speech bubble window, displaying a fortune from
--- fortune. The window is not placed or displayed on the screen. The
--- bubble has the text centered, and has the pointy part in the lower
--- right corner.
+-- 'fortune'. The window is placed appropriately near the fish, which
+-- is set to speaking. The bubble has the text centered, and has the
+-- pointy part placed appropriately to try making sure the fortune is
+-- on screen.
 createSpeechBubble :: IORef FishState  -- ^ The mutable fish state
                    -> Pos              -- ^ The current position of the fish
                    -> [String]         -- ^ Additional arguments to pass to fortune
@@ -603,8 +612,11 @@ fishTick p@(x,y) = do
         -- Not on same side after moving, so turned around
         when ( (t < x) /= (t < x') ) swapDirection
 
-       -- Avoid getting stuck, and get close enough
-        when (stuck || close) (newDest p')
+        -- Avoid getting stuck, and get close enough.
+        -- If Wanda is running away, slow back down.
+        when (stuck || close) (do newDest p'
+                                  fast <- gets fastSpeed
+                                  when (spd == fast) restoreSpeed)
         return p'
 
   updateFrame
@@ -722,9 +734,8 @@ move = uncurry . windowMove
 setSpeaking :: State FishState ()
 setSpeaking = modify (\s -> s { speaking = True })
 
-setTempSpeed :: Int -> State FishState ()
-setTempSpeed spd = modify (\s -> s { origSpeed = speed s,
-                                     speed = spd })
+setFastSpeed :: State FishState ()
+setFastSpeed = modify (\s -> s { speed = fastSpeed s })
 
 restoreSpeed :: State FishState ()
 restoreSpeed = modify (\s -> s { speed = origSpeed s })
@@ -858,8 +869,9 @@ createWanda o (bckFrames, fwdFrames) = do
       iniFishState = FishState { curFrame = 1,
                                  frameN = fishCount,
                                  backwards = iniBw,
-                                 speed = defaultSpeed,
-                                 origSpeed = defaultSpeed,
+                                 speed = optIniSpeed o,
+                                 origSpeed = optIniSpeed o,
+                                 fastSpeed = optFastSpeed o,
                                  dest = iniDest,
                                  screenSize = scrSize,
                                  frameSize = imgSize,
