@@ -330,16 +330,12 @@ createSpeechBubble ref pos args = do
   win `on` buttonPressEvent $
     tryEvent $ liftIO $ bubbleClick win ref
 
-  win `on` exposeEvent $ drawSpeech lay boxw boxh xoff yoff px py rpx rpy dir
+  -- This bitmap is used for applying the bubble input shape to the window
+  bm <- pixmapNew (Nothing::Maybe DrawWindow) ww wh (Just 1)
+
+  win `on` exposeEvent $ drawSpeech lay win bm boxw boxh xoff yoff px py rpx rpy dir
 
   widgetShowAll win
-{-
-  wd <- widgetGetDrawWindow win
-  pm <- pixmapNew (Just wd) ww wh (Just 1)
-  bm <- pixmapNew (Nothing::Maybe DrawWindow) w h (Just 1)
-  pixbufRenderThresholdAlpha pb bm 0 0 0 0 (-1) (-1) 1
--}
-
   return win
 
 -- | Sets the font of the layout, and returns the font size
@@ -364,6 +360,8 @@ data Vert = U | D deriving (Eq)
 
 -- | Drawing function for the speech bubble.
 drawSpeech :: PangoLayout   -- ^ Layout containing the fortune to display
+           -> Bubble        -- ^ The Bubble's GTK window
+           -> Bitmap        -- ^ Bitmap for shaped input
            -> Double        -- ^ Width of the box area, neglecting the point part
            -> Double        -- ^ Height of the box area, neglecting the pointy part
            -> Double        -- ^ Offset / padding / margin in the x direction
@@ -374,7 +372,7 @@ drawSpeech :: PangoLayout   -- ^ Layout containing the fortune to display
            -> Double        -- ^ What point the pointy part should come back to on the bubble
            -> BubbleDir     -- ^ Which way the point goes
            -> EventM EExpose Bool
-drawSpeech lay w h xoff yoff px py rpx rpy dir = do
+drawSpeech lay bub bm w h xoff yoff px py rpx rpy dir = do
   let r = 40  -- Arbitrary number
       x = 0
       y = 0
@@ -500,7 +498,10 @@ drawSpeech lay w h xoff yoff px py rpx rpy dir = do
         showLayout lay
 
   win <- eventWindow
-  liftIO $ renderWithDrawable win (drawBubble bdr)
+  let rndr = drawBubble bdr
+  liftIO $ do renderWithDrawable win rndr
+              renderWithDrawable bm rndr
+              widgetInputShapeCombineMask bub (Just bm) 0 0
   return True
 
 -- | Set a widget to use an RGBA colormap
