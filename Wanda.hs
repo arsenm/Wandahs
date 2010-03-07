@@ -89,14 +89,15 @@ instance Show FishState where
                     "curFrame = "        ++ show (curFrame s),
                     "backwards = "       ++ show (backwards s)]
 
-
-data FishOpts = FishOpts { optScale :: Maybe Double,
-                           optIniSpeed :: Int,
-                           optFastSpeed :: Int,
-                           optDisplayMessage :: Bool,
-                           optNumFish :: Int,
-                           optTimeout :: Int,
-                           optFortune :: [String]     -- ^ Extra options to pass to fortune
+-- | Options for the fish.
+data FishOpts = FishOpts { optScale :: Maybe Double,   -- ^ Scale the fish image
+                           optIniSpeed :: Int,         -- ^ How fast Wanda should swim in pixels
+                           optFastSpeed :: Int,        -- ^ How fast when running away
+                           optDisplayMessage :: Bool,  -- ^ Give fortunes when clicked
+                           optNumFish :: Int,          -- ^ Number of fish to spawn
+                           optTimeout :: Int,          -- ^ Update interval for animation
+                           optFortune :: [String],     -- ^ Extra options to pass to fortune
+                           optHelp :: Bool             -- ^ Display help
                          } deriving (Eq, Show)
 
 
@@ -120,7 +121,8 @@ defaultOptions = FishOpts { optScale = Nothing,
                             optDisplayMessage = False,
                             optNumFish = 1,
                             optTimeout = 100,
-                            optFortune = []
+                            optFortune = [],
+                            optHelp = False
                           }
 
 -- | Command line arguments for Wanda.
@@ -128,6 +130,9 @@ options :: [OptDescr (FishOpts -> FishOpts)]
 options =
   [ Option ['M']     ["display-message"]
     (NoArg (\opts -> opts { optDisplayMessage = True })) "Don't run, give fortunes."
+
+  , Option ['h', '?']     ["help"]
+    (NoArg (\opts -> opts { optHelp = True })) "This help."
 
   , Option ['N']     ["number"]
     (OptArg (\str opts -> opts { optNumFish = maybe 1 read str } ) "Fish count")
@@ -154,10 +159,12 @@ wandaOpts :: IO FishOpts
 wandaOpts = do
   argv <- getArgs
   pn <- getProgName
+  let header = "Usage: " ++ pn ++ " [OPTION...] files..." ++ "\n\tAdditional options will be passed to fortune"
   case getOpt' Permute options argv of
-    (o, _, n, [])  -> return (foldl (flip id) (defaultOptions { optFortune = n }) o)
-    (_, _, _, errs) -> ioError (userError (concat errs ++ usageInfo header options))
-      where header = "Usage: " ++ pn ++ " [OPTION...] files..." ++ "\n\tAdditional options will be passed to fortune"
+          (o, _, n, [])  -> do let o' = (foldl (flip id) (defaultOptions { optFortune = n }) o)
+                               when (optHelp o') (error $ usageInfo header options)
+                               return o'
+          (_, _, _, errs) -> ioError (userError (concat errs ++ usageInfo header options))
 
 
 -- | No longer speaking, so choose a new direction and destroy the bubble
