@@ -58,6 +58,7 @@ foreign import ccall "wanda_image.h &wandaimage"
 type Pos = (Int, Int)
 type Vec = (Int, Int)
 type Fish = Window
+type Bubble = Window
 type FishFrame = (Pixbuf, Bitmap)
 
 
@@ -157,12 +158,10 @@ wandaOpts = do
       where header = "Usage: " ++ pn ++ " [OPTION...] files..."
 
 
---FIXME: Backwards setting broken
 -- | No longer speaking, so choose a new direction and destroy the bubble
 unsetSpeaking :: Pos -> State FishState ()
 unsetSpeaking p = newDest p >> modify (\s -> s { speaking = False,
-                                                 speechBubble = Nothing,
-                                                 speed = origSpeed s
+                                                 speechBubble = Nothing
                                                })
 
 -- | Handler for clicking on the bubble, which destroys the speech
@@ -188,16 +187,6 @@ fishClick fish fsRef = do
   createSpeechBubble fsRef p
 
   putStrLn "FishClick Final State: " >> readIORef fsRef >>= print
-
-type Bubble = Window
-
-{-
-data Bubble = Bubble { bubbleWindow :: Window,
-                       bubbleHoriz :: Horiz,
-                       bubbleVert :: Vert
-                     }
--}
-
 
 -- | Read an initial state from an IORef, run through the state
 -- monad. Update the state of the state monad to the resulting state,
@@ -252,7 +241,7 @@ addBubble p@(x,y) b@(bw, bh) bub = do
               else x - bw + mfx
       by = if vert == D   -- Point is down, so shift up
              then y - bh + mfy
-             else y + fh - mfy
+             else y + mfy
 
   -- Update the fish state if we need to turn around.
   when (snd horizF) swapDirection
