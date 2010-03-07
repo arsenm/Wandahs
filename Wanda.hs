@@ -177,11 +177,12 @@ unsetSpeaking p = newDest p >> modify (\s -> s { speaking = False,
 -- bubble and resumes fish movement.
 bubbleClick :: Window           -- ^ The speech bubble's window
             -> IORef FishState  -- ^ The mutable state of the fish
-            -> IO ()
-bubbleClick win ref = do
+            -> EventM EButton Bool
+bubbleClick win ref = liftIO $ do
   p <- windowGetPosition =<< fishWin <$> readIORef ref
   execIOState ref (unsetSpeaking p)
   widgetDestroy win
+  return True
 
 
 -- | Handler for clicking on the fish. Depending on the mode Wanda is
@@ -190,15 +191,12 @@ bubbleClick win ref = do
 fishClick :: Fish              -- ^ The fish window
           -> IORef FishState   -- ^ The mutable fish state
           -> [String]          -- ^ Additional arguments to pass to fortune
-          -> IO ()
-fishClick fish fsRef args = do
-  putStrLn "LOL"
+          -> EventM EButton Bool
+fishClick fish fsRef args = liftIO $ do
   p <- windowGetPosition fish
-
   -- Create speech bubble and add to the fish state
   createSpeechBubble fsRef p args
-
-  putStrLn "FishClick Final State: " >> readIORef fsRef >>= print
+  return True
 
 -- | Read an initial state from an IORef, run through the state
 -- monad. Update the state of the state monad to the resulting state,
@@ -260,9 +258,6 @@ addBubble (x,y) (bw, bh) bub = do
   setSpeaking bub
   return (Dir horiz vert, bp)
 
-
---TODO: Pass remaining options given to fortune
-
 -- | Create a new speech bubble window, displaying a fortune from
 -- fortune. The window is not placed or displayed on the screen. The
 -- bubble has the text centered, and has the pointy part in the lower
@@ -273,11 +268,9 @@ createSpeechBubble :: IORef FishState  -- ^ The mutable fish state
                    -> IO Bubble        -- ^ The new speech bubble window
 createSpeechBubble ref pos args = do
   -- Wanda speaks. Figure out the size of the window from the size.
-  txt <- readProcess "fortune" args ""
-
-  pctx <- cairoCreateContext Nothing
-  lay  <- layoutText pctx txt
-
+  txt   <- readProcess "fortune" args ""
+  pctx  <- cairoCreateContext Nothing
+  lay   <- layoutText pctx txt
   fsize <- setFont lay
 
   (PangoRectangle x y w' h',_) <- layoutGetExtents lay
@@ -327,13 +320,12 @@ createSpeechBubble ref pos args = do
 
   move win bp
 
-  win `on` buttonPressEvent $
-    tryEvent $ liftIO $ bubbleClick win ref
-
   -- This bitmap is used for applying the bubble input shape to the window
   bm <- pixmapNew (Nothing::Maybe DrawWindow) ww wh (Just 1)
 
   win `on` exposeEvent $ drawSpeech lay win bm boxw boxh xoff yoff px py rpx rpy dir
+  win `on` screenChanged $ \_ -> setAlpha win
+  win `on` buttonPressEvent $ bubbleClick win ref
 
   widgetShowAll win
   return win
@@ -511,9 +503,6 @@ setAlpha widget = do
   colormap <- screenGetRGBAColormap screen
   maybe (return ()) (widgetSetColormap widget) colormap
 
---setAlpha window --TODO: also call setAlpha on alpha screen change
-
-
 -- | Draw the background transparently.
 transparentBG :: (DrawableClass dw) => dw -> IO ()
 transparentBG dw = renderWithDrawable dw drawTransparent
@@ -521,7 +510,6 @@ transparentBG dw = renderWithDrawable dw drawTransparent
           setSourceRGBA 1.0 1.0 1.0 0.0
           setOperator OperatorSource
           paint
-
 
 -- | Split the original image into a pair of forwards and backwards
 -- facing Pixbufs arrays, scaling the image by a factor. Left array
@@ -863,7 +851,6 @@ createWanda o (bckFrames, fwdFrames) = do
                                  fishWin = win,
                                  speechBubble = Nothing
                                }
-
   move win iniPos
 
   fishRef <- newIORef iniFishState
@@ -872,8 +859,8 @@ createWanda o (bckFrames, fwdFrames) = do
 
   every (optTimeout o) (fishIO img win fishRef)
 
-  on win buttonPressEvent $
-    tryEvent $ liftIO $ putStrLn "Fishclick!" >> fishClick win fishRef (optFortune o)
+  win `on` screenChanged $ \_ -> setAlpha win
+  win `on` buttonPressEvent $ fishClick win fishRef (optFortune o)
 
   return win
 
