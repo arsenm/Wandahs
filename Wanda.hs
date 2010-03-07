@@ -333,6 +333,13 @@ createSpeechBubble ref pos args = do
   win `on` exposeEvent $ drawSpeech lay boxw boxh xoff yoff px py rpx rpy dir
 
   widgetShowAll win
+{-
+  wd <- widgetGetDrawWindow win
+  pm <- pixmapNew (Just wd) ww wh (Just 1)
+  bm <- pixmapNew (Nothing::Maybe DrawWindow) w h (Just 1)
+  pixbufRenderThresholdAlpha pb bm 0 0 0 0 (-1) (-1) 1
+-}
+
   return win
 
 -- | Sets the font of the layout, and returns the font size
@@ -471,23 +478,24 @@ drawSpeech lay w h xoff yoff px py rpx rpy dir = do
 
       drawBubble bubblePath = do
         -- Fill the bubble background
-        setSourceRGBA 0.8 0.8 1 0.85
         setOperator OperatorSource
+        setSourceRGBA 1 1 1 0
+        paint
 
         -- Draw the border
-        setSourceRGB 1 1 1
-        setLineWidth 10
+        setSourceRGB 0 0 0
+        setLineWidth 0
         setLineCap LineCapRound
         setLineJoin LineJoinRound
 
         bubblePath
         closePath
 
-        setSourceRGBA 1 0.6 0.9 0.85
+        setSourceRGBA 0.9 0.9 0.9 0.8
         fill
 
         -- Set color, and draw the text
-        setSourceRGB 0.1 0.1 0.1
+        setSourceRGB 0 0 0
         moveTo tx ty
         showLayout lay
 
