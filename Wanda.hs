@@ -48,8 +48,6 @@ import System.Environment (getArgs, getProgName)
 import System.Random.Mersenne.Pure64
 import System.Console.GetOpt
 
-import Debug.Trace
-
 -- | The normal Wanda picture, free of the hassles of installing
 -- files.
 foreign import ccall "wanda_image.h &wandaimage"
@@ -531,6 +529,9 @@ setAlpha widget = do
   colormap <- screenGetRGBAColormap screen
   maybe (return ()) (widgetSetColormap widget) colormap
 
+setScreenSize :: (Int, Int) -> State FishState ()
+setScreenSize ss = modify (\s -> s { screenSize = ss })
+
 -- | Draw the background transparently.
 transparentBG :: (DrawableClass dw) => dw -> IO ()
 transparentBG dw = renderWithDrawable dw drawTransparent
@@ -922,7 +923,8 @@ createWanda o (bckFrames, fwdFrames) = do
 
   every (optTimeout o) (fishIO img win fishRef)
 
-  win `on` screenChanged $ \_ -> setAlpha win
+  win `on` screenChanged $ \scr -> do setAlpha win
+                                      execIOState fishRef . setScreenSize =<< getScreenSize scr
   win `on` buttonPressEvent $ fishClick win fishRef (optFortune o) (optMode o)
 
   return win
