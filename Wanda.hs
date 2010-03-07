@@ -212,8 +212,8 @@ addBubble :: Pos             -- ^ Current fish position
           -> (Int, Int)      -- ^ Size of the bubble
           -> Bubble          -- ^ The bubble
           -> State FishState (BubbleDir, Pos) -- ^ Where the bubble should be placed on screen, and point direction
-addBubble p@(x,y) b@(bw, bh) bub = do
-  (sw, sh) <- gets screenSize
+addBubble (x,y) (bw, bh) bub = do
+  (sw, _)  <- gets screenSize
   bckw     <- gets backwards
   (fw, fh) <- gets frameSize
 
@@ -222,7 +222,7 @@ addBubble p@(x,y) b@(bw, bh) bub = do
       r = x + bw + fw <= sw   -- Will fit towards the right
 
       u = y >= bh             -- Will fit above
-      d = y + bh + fh <= sh   -- Will fit below
+      --d = y + bh + fh <= sh   -- Will fit below
 
      -- Prefer left/right in same direction as travel. Second item is
      -- if a flip is needed
@@ -353,7 +353,6 @@ drawSpeech :: PangoLayout   -- ^ Layout containing the fortune to display
            -> BubbleDir     -- ^ Which way the point goes
            -> EventM EExpose Bool
 drawSpeech lay w h xoff yoff px py rpx rpy dir = do
-  win <- eventWindow
   let r = 40  -- Arbitrary number
       x = 0
       y = 0
@@ -474,10 +473,10 @@ drawSpeech lay w h xoff yoff px py rpx rpy dir = do
 
         -- Set color, and draw the text
         setSourceRGB 0.1 0.1 0.1
-
         moveTo tx ty
         showLayout lay
 
+  win <- eventWindow
   liftIO $ renderWithDrawable win (drawBubble bdr)
   return True
 
@@ -551,8 +550,8 @@ swapDirection = do
 
 
 -- Fish tick? Fish stick?
--- | Main fish state change function. Returns the update state and new
--- position to set.
+-- | Main fish state change function. Updates the state and returns
+-- the new position to set.
 fishTick :: Pos                 -- ^ The current position of the fish
          -> State FishState Pos -- ^ The new position of the fish
 fishTick p@(x,y) = do
@@ -582,12 +581,7 @@ fishTick p@(x,y) = do
      else fishMove
 
 
-
-
-
--- | Move the current frame to the next depending on the direction of
--- travel. Backwards means fish moving right to left. Forwards is left
--- to right.
+-- | Move the current frame to the next
 updateFrame :: State FishState ()
 updateFrame = do
   i <- gets curFrame
@@ -661,12 +655,6 @@ vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
 
                         in (round ddx, round ddy)
 
---TODO: floor or round? ceiling? negative numbers?
---TODO: dx, dy configurable speed maybe
-
-
---TODO: Exceptions
-
 -- | Produce a new mersenne-random-pure64 random number generator,
 -- seeding from /dev/urandom. If that fails, i.e. on Windows, just use
 -- the default seeded from clock newPureMT.
@@ -687,9 +675,6 @@ randomIntR (l,u) s = let n = u - l + 1
                          (v, s') = randomInt s
                      in (l + v `mod` n, s')
 
---CHECKME: Does it actually matter which way you move through the
---frames with respect to travel direction
-
 -- | Read the frame from the appropriate array depending on travel
 -- direction
 getFrame :: FishState -> FishFrame
@@ -698,16 +683,13 @@ getFrame s = let arr = if backwards s
                          else frames s
              in arr ! curFrame s
 
-
 move :: Fish -> Pos -> IO ()
 move = uncurry . windowMove
-
 
 setSpeaking :: Bubble -> State FishState ()
 setSpeaking bub = modify (\s -> s { speaking = True,
                                     speechBubble = Just bub
                                   })
-
 
 setTempSpeed :: Int -> State FishState ()
 setTempSpeed spd = modify (\s -> s { origSpeed = speed s,
@@ -725,14 +707,11 @@ fishIO :: Image            -- ^ The fish image widget
        -> IO Bool          -- ^ Continue the signal
 fishIO img win ref = do
   r  <- windowGetPosition win
-
   (r', fs') <- runState (fishTick r) <$> readIORef ref
-
   move win r'
 -- moveBub r' fs'
 
   let (fr,msk) = getFrame fs'
-
   imageSetFromPixbuf img fr
 
 --TODO: Do I need to remove the old mask?
@@ -792,7 +771,6 @@ getMask :: Pixbuf -> IO Bitmap
 getMask pb = do
   w <- pixbufGetWidth  pb
   h <- pixbufGetHeight pb
-
   bm <- pixmapNew (Nothing::Maybe DrawWindow) w h (Just 1)
   pixbufRenderThresholdAlpha pb bm 0 0 0 0 (-1) (-1) 1
   return bm
@@ -888,11 +866,5 @@ main = do
 
   replicateM_ (optNumFish o) (createWanda o fr)
 
-  -- bub <- createSpeechBubble
-
-  -- widgetShowAll bub
-  -- move bub (300,300)
-
   mainGUI
-
 
