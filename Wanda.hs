@@ -123,12 +123,12 @@ defaultScale = Just 0.5
 
 -- | Default fish options
 defaultOptions :: FishOpts
-defaultOptions = FishOpts { optScale = Nothing,
+defaultOptions = FishOpts { optScale = defaultScale,
                             optIniSpeed = defaultSpeed,
                             optFastSpeed = 2 * defaultSpeed,
                             optDisplayMessage = False,
                             optNumFish = 1,
-                            optTimeout = 100,
+                            optTimeout = defaultTimeout,
                             optFortune = [],
                             optHelp = False,
                             optMode = Fortunes
@@ -632,19 +632,17 @@ updateFrame = do
   let i' = (i + 1) `mod` n
   modify (\s -> s { curFrame = i' })
 
-
+-- | Choose a location far away offscreen place towards the closest
+-- screen edge, for running away.
 newOffscreenDest :: Pos -> State FishState ()
 newOffscreenDest (x,y) = do
   (sx, sy) <- gets screenSize
   gen      <- gets rndGen
   oldBw    <- gets backwards
-  i        <- gets curFrame
-  n        <- gets frameN
 
-  -- Choose a location far away offscreen place towards the closest screen edge
   let (tx1,ty1)   = (2 * sx, 2 * sy)
       (tx2,ty2)   = (4 * sx, 4 * sy)
-      xBnds       = if dx2 < dx1
+      xBnds       = if dx2 < dx1    -- right is closer
                        then (sx + tx1, sx + tx2)
                        else (negate tx2, negate tx1)
       yBnds       = if dy2 < dy1
@@ -659,44 +657,30 @@ newOffscreenDest (x,y) = do
       dy2 = sy - y  -- distance to bottom
 
       bw = fst loc < x
-      i' = if oldBw == bw
-             then i
-             else n - i - 1
 
+  when (oldBw /= bw) swapDirection
   modify (\s -> s { rndGen = gen',
-                    dest = loc,
-                    backwards = bw,
-                    curFrame = i'
+                    dest = loc
                   } )
 
--- | Pick a new destination and Randomgen from the current position
+-- | Pick a new 'normal' destination and Randomgen from the current
+-- position
 newDest :: Pos -> State FishState ()
 newDest (x,_) = do
   (sx, sy) <- gets screenSize
   gen      <- gets rndGen
   oldBw    <- gets backwards
-  i        <- gets curFrame
-  n        <- gets frameN
-
-  --TODO: Maybe some kind of biasing to get longer, smoother
-  --paths. Sometimes can get a close by new destination and a weird
-  --jerk could happen
 
   -- limits are (screen x +- 10%, screen y +- 10%)
   let (tx,ty)     = (sx `div` 10, sy `div` 10)
       xBnds       = (negate tx, sx + tx)
       yBnds       = (negate ty, sy + ty)
       (loc, gen') = randomPair gen xBnds yBnds
-
       bw = fst loc < x
-      i' = if oldBw == bw
-             then i
-             else n - i - 1
 
+  when (bw /= oldBw) swapDirection
   modify (\s -> s { rndGen = gen',
-                    dest = loc,
-                    backwards = bw,
-                    curFrame = i'
+                    dest = loc
                   } )
 
 
@@ -793,11 +777,12 @@ fishIO img win ref = do
 --TODO: Do I need to remove the old mask?
 --It appears I do, at least for the input shape. I get gdk CRITICAL if I don't
 -- set update clickthrough
+-- TODO: Maybe do this if no compositing available
 --  widgetShapeCombineMask win Nothing 0 0
 --  widgetShapeCombineMask win (Just msk) 0 0
 
---widgetInputShapeCombineMask win Nothing    0 0
---widgetInputShapeCombineMask win (Just msk) 0 0
+  widgetInputShapeCombineMask win Nothing    0 0
+  widgetInputShapeCombineMask win (Just msk) 0 0
 
   writeIORef ref fs'
   return True
