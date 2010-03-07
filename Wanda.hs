@@ -95,7 +95,8 @@ data FishOpts = FishOpts { optScale :: Maybe Double,
                            optFastSpeed :: Int,
                            optDisplayMessage :: Bool,
                            optNumFish :: Int,
-                           optTimeout :: Int
+                           optTimeout :: Int,
+                           optFortune :: [String]     -- ^ Extra options to pass to fortune
                          } deriving (Eq, Show)
 
 
@@ -105,6 +106,7 @@ fishWidth = 90
 
 defaultSpeed = 17
 defaultTimeout = 100
+defaultScale = Just 0.5
 -- Unfortunately the wrong kind of scale.
 -- Fish puns for great justice.
 --fishScale = Just 0.5
@@ -117,20 +119,21 @@ defaultOptions = FishOpts { optScale = Nothing,
                             optFastSpeed = 2 * defaultSpeed,
                             optDisplayMessage = False,
                             optNumFish = 1,
-                            optTimeout = 100
+                            optTimeout = 100,
+                            optFortune = []
                           }
 
 -- | Command line arguments for Wanda.
 options :: [OptDescr (FishOpts -> FishOpts)]
 options =
-  [ Option ['m']     ["display-message"]
+  [ Option ['M']     ["display-message"]
     (NoArg (\opts -> opts { optDisplayMessage = True })) "Don't run, give fortunes."
 
-  , Option ['n']     ["number"]
+  , Option ['N']     ["number"]
     (OptArg (\str opts -> opts { optNumFish = maybe 1 read str } ) "Fish count")
     "Number of fish to start"
 
-  , Option ['s']     ["scale"]
+  , Option ['S']     ["scale"]
     (OptArg (\str opts -> opts { optScale = read <$> str } ) "scale factor")
     "Scale the fish"
 
@@ -151,11 +154,10 @@ wandaOpts :: IO FishOpts
 wandaOpts = do
   argv <- getArgs
   pn <- getProgName
-  case getOpt Permute options argv of
-    (o, [], [])  -> return (foldl (flip id) defaultOptions o)
-    (_, n, [])   -> ioError (userError ("Unknown options: " ++ unwords n))
-    (_, _, errs) -> ioError (userError (concat errs ++ usageInfo header options))
-      where header = "Usage: " ++ pn ++ " [OPTION...] files..."
+  case getOpt' Permute options argv of
+    (o, _, n, [])  -> return (foldl (flip id) (defaultOptions { optFortune = n }) o)
+    (_, _, _, errs) -> ioError (userError (concat errs ++ usageInfo header options))
+      where header = "Usage: " ++ pn ++ " [OPTION...] files..." ++ "\n\tAdditional options will be passed to fortune"
 
 
 -- | No longer speaking, so choose a new direction and destroy the bubble
@@ -178,13 +180,16 @@ bubbleClick win ref = do
 -- | Handler for clicking on the fish. Depending on the mode Wanda is
 -- in, this could mean displaying a fortune in a speech bubble, or
 -- running quickly off the screen.
-fishClick :: Fish -> IORef FishState -> IO ()
-fishClick fish fsRef = do
+fishClick :: Fish              -- ^ The fish window
+          -> IORef FishState   -- ^ The mutable fish state
+          -> [String]          -- ^ Additional arguments to pass to fortune
+          -> IO ()
+fishClick fish fsRef args = do
   putStrLn "LOL"
   p <- windowGetPosition fish
 
   -- Create speech bubble and add to the fish state
-  createSpeechBubble fsRef p
+  createSpeechBubble fsRef p args
 
   putStrLn "FishClick Final State: " >> readIORef fsRef >>= print
 
@@ -255,10 +260,13 @@ addBubble (x,y) (bw, bh) bub = do
 -- fortune. The window is not placed or displayed on the screen. The
 -- bubble has the text centered, and has the pointy part in the lower
 -- right corner.
-createSpeechBubble :: IORef FishState -> Pos -> IO Bubble
-createSpeechBubble ref pos = do
+createSpeechBubble :: IORef FishState  -- ^ The mutable fish state
+                   -> Pos              -- ^ The current position of the fish
+                   -> [String]         -- ^ Additional arguments to pass to fortune
+                   -> IO Bubble        -- ^ The new speech bubble window
+createSpeechBubble ref pos args = do
   -- Wanda speaks. Figure out the size of the window from the size.
-  txt <- readProcess "fortune" [] ""
+  txt <- readProcess "fortune" args ""
 
   pctx <- cairoCreateContext Nothing
   lay  <- layoutText pctx txt
@@ -293,8 +301,8 @@ createSpeechBubble ref pos = do
             windowGravity := GravityStatic,     -- Importantish.
             windowDefaultWidth := ww,
             windowDefaultHeight := wh,
-            windowAcceptFocus := True, -- False?
-            windowResizable := True, -- False
+            windowAcceptFocus := False,
+            windowResizable := True,
             windowSkipTaskbarHint := True,
             windowSkipPagerHint := True,
             windowModal := True ]
@@ -789,11 +797,11 @@ createWanda o (bckFrames, fwdFrames) = do
   set win [ containerChild := img,
             windowTitle := "Wanda",
             windowDecorated := False,
-            windowTypeHint := WindowTypeHintDock, -- Dock
+            windowTypeHint := WindowTypeHintDock,
             windowGravity := GravityStatic,     -- Importantish.
             windowDefaultHeight := fishHeight,
             windowDefaultWidth := fishWidth,
-            windowAcceptFocus := True, -- False?
+            windowAcceptFocus := False,
             windowResizable := False,
             windowSkipTaskbarHint := True,
             windowSkipPagerHint := True,
@@ -810,25 +818,21 @@ createWanda o (bckFrames, fwdFrames) = do
 
 -- The transparency needs to be redone as the window is redrawn
   winDraw <- widgetGetDrawWindow win
-
   onExpose win (\_ -> transparentBG winDraw >> return False)
 
 --TODO: Update screen size changed signal
 
 --TODO: be able to start from right / backwards
 
-  scr <- widgetGetScreen win
-
   gen <- newPureMTSysSeed
-  scrSize <- getScreenSize scr
+  scrSize <- getScreenSize =<< widgetGetScreen win
+  imgSize <- pixbufGetSize (fst $ fwdFrames ! 0) -- kind of shittily get the size after scaling
 
   let (iniPos, gen')   = randomStartPos gen  scrSize  -- random offscreen location to start from
       (iniDest, gen'') = randomPos      gen' scrSize  -- where to go from there (not offscreen)
       iniBw = fst iniDest < fst iniPos
 
-  imgSize <- pixbufGetSize (fst $ fwdFrames ! 0) -- kind of shittily get the size after scaling
-
-  let iniFishState = FishState { curFrame = 1,
+      iniFishState = FishState { curFrame = 1,
                                  frameN = fishCount,
                                  backwards = iniBw,
                                  speed = defaultSpeed,
@@ -853,7 +857,7 @@ createWanda o (bckFrames, fwdFrames) = do
   every (optTimeout o) (fishIO img win fishRef)
 
   on win buttonPressEvent $
-    tryEvent $ liftIO $ putStrLn "Fishclick!" >> fishClick win fishRef
+    tryEvent $ liftIO $ putStrLn "Fishclick!" >> fishClick win fishRef (optFortune o)
 
   return win
 
