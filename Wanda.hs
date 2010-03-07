@@ -687,7 +687,9 @@ newDest (x,_) = do
 -- | Calculate the Cartesian distance between two points, approximated
 -- to closest integer
 dist :: Pos -> Pos -> Int
-dist (x1,y1) (x2,y2) = round . sqrt . fromIntegral $ (x1 - x2)^2 + (y1 - y2)^2
+dist (x1,y1) (x2,y2) = round . sqrt $ (dx * dx) + (dy * dy)
+  where dx = fromIntegral (x2 - x1)
+        dy = fromIntegral (y2 - y1)
 
 
 -- sqrt (dx^2 + (k * dx) ^2) = s^2
@@ -706,7 +708,7 @@ vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
                             k = abs (b / a)
                             s = fromIntegral d
 
-                            dx = sqrt (s^2 / (1 + k^2))
+                            dx = sqrt (s ** 2 / (1 + k ** 2))
                             dy = k * dx
 
                             ddx = if a > 0
