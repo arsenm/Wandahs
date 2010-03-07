@@ -78,15 +78,21 @@ data FishState = FishState { dest :: !Pos,         -- ^ Current destination
                              frameSize :: !(Int,Int),   -- ^ Height and width of the individual frames
                              frames :: Array Int FishFrame,  -- ^ Frames with fish facing left
                              backFrames :: Array Int FishFrame, -- ^ Frames with fish facing right
-                             fishWin :: Fish                   -- ^ The fish's window
+                             fishWin :: Fish                    -- ^ The fish's window
                            }
 
 
 instance Show FishState where
   show s = unlines ["FishState {\n",
-                    "dest = "            ++ show (dest s),
-                    "curFrame = "        ++ show (curFrame s),
-                    "backwards = "       ++ show (backwards s)]
+                    "\tdest = "        ++ show (dest s),
+                    "\tcurFrame = "    ++ show (curFrame s),
+                    "\tbackwards = "   ++ show (backwards s),
+                    "\tscreenSize = "  ++ show (screenSize s),
+                    "\tspeed = "       ++ show (speed s),
+                    "\torigSpeed = "   ++ show (origSpeed s),
+                    "\tspeaking = "    ++ show (speaking s),
+                    "\tframeSize = "   ++ show (frameSize s),
+                    "}\n"]
 
 -- | Options for the fish.
 data FishOpts = FishOpts { optScale :: Maybe Double,   -- ^ Scale the fish image
@@ -96,9 +102,13 @@ data FishOpts = FishOpts { optScale :: Maybe Double,   -- ^ Scale the fish image
                            optNumFish :: Int,          -- ^ Number of fish to spawn
                            optTimeout :: Int,          -- ^ Update interval for animation
                            optFortune :: [String],     -- ^ Extra options to pass to fortune
-                           optHelp :: Bool             -- ^ Display help
+                           optHelp :: Bool,            -- ^ Display help
+                           optMode :: FishMode         -- ^ What mode to use
                          } deriving (Eq, Show)
 
+data FishMode = Fortunes
+              | Running
+              deriving (Eq, Show)
 
 fishCount = 8
 fishHeight = 55
@@ -121,7 +131,8 @@ defaultOptions = FishOpts { optScale = Nothing,
                             optNumFish = 1,
                             optTimeout = 100,
                             optFortune = [],
-                            optHelp = False
+                            optHelp = False,
+                            optMode = Fortunes
                           }
 
 -- | Command line arguments for Wanda.
@@ -142,16 +153,25 @@ options =
     "Scale the fish"
 
   , Option ['v']     ["velocity"]
-    (OptArg (\str opts -> opts { optIniSpeed = maybe defaultSpeed read str } ) "normal speed")
+    (ReqArg (\str opts -> opts { optIniSpeed = read str } ) "normal speed")
     "Normal speed"
 
   , Option ['t']     ["timeout"]
-    (OptArg (\str opts -> opts { optTimeout = maybe defaultTimeout read str } ) "Update interval")
+    (ReqArg (\str opts -> opts { optTimeout = read str } ) "Update interval")
     "Update interval"
 
   , Option ['f']     ["fast-velocity"]
-    (OptArg (\str opts -> opts { optIniSpeed = maybe (2*defaultSpeed) read str } ) "Running speed")
+    (ReqArg (\str opts -> opts { optIniSpeed = read str } ) "Running speed")
     "Running away speed"
+
+  , Option ['F']     ["fortunes"]
+    (NoArg (\opts -> opts { optMode = Fortunes } ))
+    "Wanda speaks a fortune when clicked. (Default)"
+
+  , Option ['R']     ["runaway"]
+    (NoArg (\opts -> opts { optMode = Running } ))
+    "Wanda swims away quickly when clicked."
+
   ]
 
 wandaOpts :: IO FishOpts
@@ -188,11 +208,16 @@ bubbleClick win ref = liftIO $ do
 fishClick :: Fish              -- ^ The fish window
           -> IORef FishState   -- ^ The mutable fish state
           -> [String]          -- ^ Additional arguments to pass to fortune
+          -> FishMode
           -> EventM EButton Bool
-fishClick fish fsRef args = liftIO $ do
+fishClick fish fsRef args Fortunes = liftIO $ do
   p <- windowGetPosition fish
   -- Create speech bubble and add to the fish state
   createSpeechBubble fsRef p args
+  return True
+
+fishClick fish fsRef args Running = liftIO $ do
+  putStrLn "Implement me"
   return True
 
 -- | Read an initial state from an IORef, run through the state
@@ -853,7 +878,7 @@ createWanda o (bckFrames, fwdFrames) = do
   every (optTimeout o) (fishIO img win fishRef)
 
   win `on` screenChanged $ \_ -> setAlpha win
-  win `on` buttonPressEvent $ fishClick win fishRef (optFortune o)
+  win `on` buttonPressEvent $ fishClick win fishRef (optFortune o) (optMode o)
 
   return win
 
