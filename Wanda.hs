@@ -78,8 +78,7 @@ data FishState = FishState { dest :: !Pos,         -- ^ Current destination
                              frameSize :: !(Int,Int),   -- ^ Height and width of the individual frames
                              frames :: Array Int FishFrame,  -- ^ Frames with fish facing left
                              backFrames :: Array Int FishFrame, -- ^ Frames with fish facing right
-                             fishWin :: Fish,                   -- ^ The fish's window
-                             speechBubble :: Maybe Bubble       -- ^ The speech bubble window
+                             fishWin :: Fish                   -- ^ The fish's window
                            }
 
 
@@ -169,9 +168,7 @@ wandaOpts = do
 
 -- | No longer speaking, so choose a new direction and destroy the bubble
 unsetSpeaking :: Pos -> State FishState ()
-unsetSpeaking p = newDest p >> modify (\s -> s { speaking = False,
-                                                 speechBubble = Nothing
-                                               })
+unsetSpeaking p = newDest p >> modify (\s -> s { speaking = False })
 
 -- | Handler for clicking on the bubble, which destroys the speech
 -- bubble and resumes fish movement.
@@ -220,9 +217,8 @@ execIOState ref m = modifyIORef ref (execState m)
 -- the point needs to go.
 addBubble :: Pos             -- ^ Current fish position
           -> (Int, Int)      -- ^ Size of the bubble
-          -> Bubble          -- ^ The bubble
           -> State FishState (BubbleDir, Pos) -- ^ Where the bubble should be placed on screen, and point direction
-addBubble (x,y) (bw, bh) bub = do
+addBubble (x,y) (bw, bh) = do
   (sw, _)  <- gets screenSize
   bckw     <- gets backwards
   (fw, fh) <- gets frameSize
@@ -255,7 +251,7 @@ addBubble (x,y) (bw, bh) bub = do
 
   -- Update the fish state if we need to turn around.
   when (snd horizF) swapDirection
-  setSpeaking bub
+  setSpeaking
   return (Dir horiz vert, bp)
 
 -- | Create a new speech bubble window, displaying a fortune from
@@ -316,7 +312,7 @@ createSpeechBubble ref pos args = do
 
   -- Add the bubble to the fish. Also figures out the direction to
   -- draw the speech bubble.
-  (dir, bp) <- runIOState ref (addBubble pos (ww,wh) win)
+  (dir, bp) <- runIOState ref (addBubble pos (ww,wh))
 
   move win bp
 
@@ -698,10 +694,8 @@ getFrame s = let arr = if backwards s
 move :: Fish -> Pos -> IO ()
 move = uncurry . windowMove
 
-setSpeaking :: Bubble -> State FishState ()
-setSpeaking bub = modify (\s -> s { speaking = True,
-                                    speechBubble = Just bub
-                                  })
+setSpeaking :: State FishState ()
+setSpeaking = modify (\s -> s { speaking = True })
 
 setTempSpeed :: Int -> State FishState ()
 setTempSpeed spd = modify (\s -> s { origSpeed = speed s,
@@ -848,8 +842,7 @@ createWanda o (bckFrames, fwdFrames) = do
                                  rndGen = gen'',
                                  frames = fwdFrames,
                                  backFrames = bckFrames,
-                                 fishWin = win,
-                                 speechBubble = Nothing
+                                 fishWin = win
                                }
   move win iniPos
 
