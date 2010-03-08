@@ -17,7 +17,7 @@
 -- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 --
 
-{-# LANGUAGE ForeignFunctionInterface, BangPatterns, ScopedTypeVariables, UnboxedTuples, MagicHash #-}
+{-# LANGUAGE ForeignFunctionInterface, BangPatterns, ScopedTypeVariables #-}
 {-# OPTIONS_GHC -W -funbox-strict-fields #-}
 {-# CFILES wanda_image.c #-}
 
@@ -47,7 +47,7 @@ import System.Process (readProcess)
 import System.Environment (getArgs, getProgName)
 import System.Random.Mersenne.Pure64
 import System.Console.GetOpt
-import GHC.Exts
+
 
 -- | The normal Wanda picture, free of the hassles of installing
 -- files.
@@ -56,8 +56,6 @@ foreign import ccall "wanda_image.h &wandaimage"
 
 type Pos = (Int, Int)
 type Vec = (Int, Int)
---type Pos = (# Int#, Int# #)
---type Vec = (# Int#, Int# #)
 type Dist = Int
 type Fish = Window
 type Bubble = Window
@@ -68,8 +66,7 @@ type FishFrame = (Pixbuf, Bitmap)
 -- wanda schools moving in same general way?
 
 -- | Track the state of the fish
-data FishState = FishState { lol :: !Pos2,
-                             dest :: !Pos,         -- ^ Current destination
+data FishState = FishState { dest :: !Pos,         -- ^ Current destination
                              curFrame :: !Int,     -- ^ Current frame index
                              frameN :: !Int,       -- ^ Total number of frames in the animation
                              backwards :: !Bool,   -- ^ If traveling backwards or not
@@ -599,18 +596,16 @@ swapDirection = do
 -- the new position to set.
 fishTick :: Pos                 -- ^ The current position of the fish
          -> State FishState Pos -- ^ The new position of the fish
-fishTick !p@(x,y) = do
+fishTick p@(x,y) = do
   spd     <- gets speed
-  !d@(t,_) <- gets dest
+  d@(t,_) <- gets dest
   spk     <- gets speaking
 
   let (dx,dy) = vec spd p d
       x'      = x + dx
       p'      = (x', y + dy)
       close   = dist p' d <= spd
-      close2  = dist2 p2 d2 <= spd
-      p2 = Pos2 (fst p') (snd p')
-      d2 = Pos2 (fst d) (snd d)
+      stuck   = dx == 0 && dy == 0
 
       fishMove = do
         -- Not on same side after moving, so turned around
@@ -618,9 +613,9 @@ fishTick !p@(x,y) = do
 
         -- Avoid getting stuck, and get close enough.
         -- If Wanda is running away, slow back down.
-        when (close&&close2) (do newDest p'
-                                 fast <- gets fastSpeed
-                                 when (spd == fast) restoreSpeed)
+        when (close || stuck) (do newDest p'
+                                  fast <- gets fastSpeed
+                                  when (spd == fast) restoreSpeed)
         return p'
 
   updateFrame
@@ -692,33 +687,10 @@ newDest (x,_) = do
 
 -- | Calculate the Cartesian distance between two points, approximated
 -- to closest integer
-{-# NOINLINE dist #-}
 dist :: Pos -> Pos -> Dist
-dist !(x1,y1) !(x2,y2) = round . sqrt $ (dx * dx) + (dy * dy)
-  where !dx = fromIntegral (x2 - x1)
-        !dy = fromIntegral (y2 - y1)
-
-data Pos2 = Pos2 !Int !Int
-data Pos3 = Pos3 Int# Int#
-        {-
-dist' :: (# Int#, Int# #) -> (# Int#, Int# #) -> Int#
-dist' (# x1, y1 #) (# x2, y2 #) = double2Int# (sqrtDouble# ((dx *## dx) +## (dy *## dy)))
-  where dx = int2Double# (x2 -# x1)
-        dy = int2Double# (y2 -# y1)
--}
-
-dist3 :: Pos3 -> Pos3 -> Int#
-dist3 (Pos3 x1 y1) (Pos3 x2 y2) = double2Int# (sqrtDouble# ((dx *## dx) +## (dy *## dy)))
-  where dx = int2Double# (x2 -# x1)
-        dy = int2Double# (y2 -# y1)
-
-
-{-# NOINLINE dist2 #-}
-dist2 :: Pos2 -> Pos2 -> Int
-dist2 (Pos2 x1 y1) (Pos2 x2 y2) = round . sqrt $ (dx * dx) + (dy * dy)
+dist (x1,y1) (x2,y2) = round . sqrt $ (dx * dx) + (dy * dy)
   where dx = fromIntegral (x2 - x1)
         dy = fromIntegral (y2 - y1)
-
 
 -- sqrt (dx^2 + (k * dx) ^2) = s^2
 -- k = ratio of distance to travel
@@ -739,13 +711,12 @@ vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
                             dx = sqrt ((s*s) / (1 + k*k))
                             dy = k * dx
 
-                            ddx = if a > 0
+                            ddx = if a >= 0
                                     then dx
                                     else negate dx
-                            ddy = if b > 0
+                            ddy = if b >= 0
                                      then dy
                                      else negate dy
-
                         in (round ddx, round ddy)
 
 -- | Produce a new mersenne-random-pure64 random number generator,
@@ -799,9 +770,7 @@ fishIO img win ref = do
   r  <- windowGetPosition win
   (r', fs') <- runState (fishTick r) <$> readIORef ref
   move win r'
--- moveBub r' fs'
-
-  let (fr,msk) = getFrame fs'
+  let (fr, msk) = getFrame fs'
   imageSetFromPixbuf img fr
 
 --TODO: Do I need to remove the old mask?
@@ -915,8 +884,7 @@ createWanda o (bckFrames, fwdFrames) = do
       (iniDest, gen'') = randomPos      gen' scrSize  -- where to go from there (not offscreen)
       iniBw = fst iniDest < fst iniPos
 
-      iniFishState = FishState { lol = Pos2 3 4,
-                                 curFrame = 1,
+      iniFishState = FishState { curFrame = 1,
                                  frameN = fishCount,
                                  backwards = iniBw,
                                  speed = optIniSpeed o,

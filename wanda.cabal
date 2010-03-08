@@ -20,11 +20,11 @@ Executable: wanda
 Main-Is: Wanda.hs
 pkgconfig-depends: gtk+-2.0, glib-2.0, gobject-2.0, gdk-2.0, cairo
 CC-Options: -O3 -march=core2 -mtune=core2 -maccumulate-outgoing-args
-GHC-Options: -W -O2 -fvia-c -funbox-strict-fields
+GHC-Options: -W -O2 -fvia-c -funbox-strict-fields -optc-O3
 --GHC-Options: -W -O0 -funbox-strict-fields
 Install-Includes: ./wanda_image.h
 Include-Dirs: .
 C-Sources: ./wanda_image.c
-Extensions: ForeignFunctionInterface, ScopedTypeVariables, UnboxedTuples
+Extensions: ForeignFunctionInterface, ScopedTypeVariables
 Build-Depends: base, glib, gtk, mtl, haskell98, array, cairo, mersenne-random-pure64, binary, bytestring, process
 
