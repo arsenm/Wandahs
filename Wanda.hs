@@ -17,7 +17,7 @@
 -- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 --
 
-{-# LANGUAGE ForeignFunctionInterface, BangPatterns, ScopedTypeVariables #-}
+{-# LANGUAGE ForeignFunctionInterface, BangPatterns, ScopedTypeVariables, UnboxedTuples, MagicHash #-}
 {-# OPTIONS_GHC -W -funbox-strict-fields #-}
 {-# CFILES wanda_image.c #-}
 
@@ -47,6 +47,7 @@ import System.Process (readProcess)
 import System.Environment (getArgs, getProgName)
 import System.Random.Mersenne.Pure64
 import System.Console.GetOpt
+import GHC.Exts
 
 -- | The normal Wanda picture, free of the hassles of installing
 -- files.
@@ -55,6 +56,9 @@ foreign import ccall "wanda_image.h &wandaimage"
 
 type Pos = (Int, Int)
 type Vec = (Int, Int)
+--type Pos = (# Int#, Int# #)
+--type Vec = (# Int#, Int# #)
+type Dist = Int
 type Fish = Window
 type Bubble = Window
 type FishFrame = (Pixbuf, Bitmap)
@@ -64,7 +68,8 @@ type FishFrame = (Pixbuf, Bitmap)
 -- wanda schools moving in same general way?
 
 -- | Track the state of the fish
-data FishState = FishState { dest :: !Pos,         -- ^ Current destination
+data FishState = FishState { lol :: !Pos2,
+                             dest :: !Pos,         -- ^ Current destination
                              curFrame :: !Int,     -- ^ Current frame index
                              frameN :: !Int,       -- ^ Total number of frames in the animation
                              backwards :: !Bool,   -- ^ If traveling backwards or not
@@ -594,17 +599,18 @@ swapDirection = do
 -- the new position to set.
 fishTick :: Pos                 -- ^ The current position of the fish
          -> State FishState Pos -- ^ The new position of the fish
-fishTick p@(x,y) = do
+fishTick !p@(x,y) = do
   spd     <- gets speed
-  d@(t,_) <- gets dest
+  !d@(t,_) <- gets dest
   spk     <- gets speaking
 
   let (dx,dy) = vec spd p d
       x'      = x + dx
       p'      = (x', y + dy)
       close   = dist p' d <= spd
-      stuck   = dx == 0 && dy == 0
-      --CHECKME: Can stuck actually happen?
+      close2  = dist2 p2 d2 <= spd
+      p2 = Pos2 (fst p') (snd p')
+      d2 = Pos2 (fst d) (snd d)
 
       fishMove = do
         -- Not on same side after moving, so turned around
@@ -612,9 +618,9 @@ fishTick p@(x,y) = do
 
         -- Avoid getting stuck, and get close enough.
         -- If Wanda is running away, slow back down.
-        when (stuck || close) (do newDest p'
-                                  fast <- gets fastSpeed
-                                  when (spd == fast) restoreSpeed)
+        when (close&&close2) (do newDest p'
+                                 fast <- gets fastSpeed
+                                 when (spd == fast) restoreSpeed)
         return p'
 
   updateFrame
@@ -686,8 +692,30 @@ newDest (x,_) = do
 
 -- | Calculate the Cartesian distance between two points, approximated
 -- to closest integer
-dist :: Pos -> Pos -> Int
-dist (x1,y1) (x2,y2) = round . sqrt $ (dx * dx) + (dy * dy)
+{-# NOINLINE dist #-}
+dist :: Pos -> Pos -> Dist
+dist !(x1,y1) !(x2,y2) = round . sqrt $ (dx * dx) + (dy * dy)
+  where !dx = fromIntegral (x2 - x1)
+        !dy = fromIntegral (y2 - y1)
+
+data Pos2 = Pos2 !Int !Int
+data Pos3 = Pos3 Int# Int#
+        {-
+dist' :: (# Int#, Int# #) -> (# Int#, Int# #) -> Int#
+dist' (# x1, y1 #) (# x2, y2 #) = double2Int# (sqrtDouble# ((dx *## dx) +## (dy *## dy)))
+  where dx = int2Double# (x2 -# x1)
+        dy = int2Double# (y2 -# y1)
+-}
+
+dist3 :: Pos3 -> Pos3 -> Int#
+dist3 (Pos3 x1 y1) (Pos3 x2 y2) = double2Int# (sqrtDouble# ((dx *## dx) +## (dy *## dy)))
+  where dx = int2Double# (x2 -# x1)
+        dy = int2Double# (y2 -# y1)
+
+
+{-# NOINLINE dist2 #-}
+dist2 :: Pos2 -> Pos2 -> Int
+dist2 (Pos2 x1 y1) (Pos2 x2 y2) = round . sqrt $ (dx * dx) + (dy * dy)
   where dx = fromIntegral (x2 - x1)
         dy = fromIntegral (y2 - y1)
 
@@ -699,16 +727,16 @@ dist (x1,y1) (x2,y2) = round . sqrt $ (dx * dx) + (dy * dy)
 
 -- | Approximate a dx/dy vector of ~length d from the first point to
 -- the second with a ratio depending on the distance to be traveled.
-vec :: Int   -- ^ The approximate length of the vector to produce
-    -> Pos   -- ^ Starting point
-    -> Pos   -- ^ Ending point
-    -> Vec   -- ^ Resulting (dx, dy) vector from point 1 to point 2
+vec :: Dist   -- ^ The approximate length of the vector to produce
+    -> Pos    -- ^ Starting point
+    -> Pos    -- ^ Ending point
+    -> Vec    -- ^ Resulting (dx, dy) vector from point 1 to point 2
 vec d (x1,y1) (x2,y2) = let a = fromIntegral (x2 - x1)
                             b = fromIntegral (y2 - y1)
                             k = abs (b / a)
                             s = fromIntegral d
 
-                            dx = sqrt (s ** 2 / (1 + k ** 2))
+                            dx = sqrt ((s*s) / (1 + k*k))
                             dy = k * dx
 
                             ddx = if a > 0
@@ -887,7 +915,8 @@ createWanda o (bckFrames, fwdFrames) = do
       (iniDest, gen'') = randomPos      gen' scrSize  -- where to go from there (not offscreen)
       iniBw = fst iniDest < fst iniPos
 
-      iniFishState = FishState { curFrame = 1,
+      iniFishState = FishState { lol = Pos2 3 4,
+                                 curFrame = 1,
                                  frameN = fishCount,
                                  backwards = iniBw,
                                  speed = optIniSpeed o,
@@ -912,7 +941,9 @@ createWanda o (bckFrames, fwdFrames) = do
 
   win `on` screenChanged $ \scr -> do setAlpha win
                                       execIOState fishRef . setScreenSize =<< getScreenSize scr
-  win `on` buttonPressEvent $ fishClick win fishRef (optFortune o) (optMode o)
+  win `on` buttonPressEvent $ do but <- eventButton
+                                 liftIO $ when (but == MiddleButton) mainQuit
+                                 fishClick win fishRef (optFortune o) (optMode o)
 
   return win
 
