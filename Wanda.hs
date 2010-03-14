@@ -325,15 +325,16 @@ createSpeechBubble ref pos args = do
   win <- windowNew
   set win [ windowTitle := "Wanda the Fish Says",
             windowDecorated := False,
-            windowTypeHint := WindowTypeHintDock, -- Dock
+            windowModal := True,
+            windowTypeHint := WindowTypeHintDesktop,
             windowGravity := GravityStatic,     -- Importantish.
             windowDefaultWidth := ww,
             windowDefaultHeight := wh,
             windowAcceptFocus := False,
             windowResizable := True,
             windowSkipTaskbarHint := True,
-            windowSkipPagerHint := True,
-            windowModal := True ]
+            windowSkipPagerHint := True
+          ]
 
   widgetSetAppPaintable win True
   setAlpha win
@@ -849,15 +850,15 @@ createWanda o (bckFrames, fwdFrames) = do
   set win [ containerChild := img,
             windowTitle := "Wanda",
             windowDecorated := False,
-            windowTypeHint := WindowTypeHintDock,
+            windowTypeHint := WindowTypeHintDesktop,
             windowGravity := GravityStatic,     -- Importantish.
             windowDefaultHeight := fishHeight,
             windowDefaultWidth := fishWidth,
             windowAcceptFocus := False,
             windowResizable := False,
             windowSkipTaskbarHint := True,
-            windowSkipPagerHint := True,
-            windowModal := True ]
+            windowSkipPagerHint := True
+          ]
 
   widgetSetAppPaintable win True
   setAlpha win
