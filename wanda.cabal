@@ -17,7 +17,7 @@ Description: Wanda, the unofficial GNOME mascot! A swimming fish
              why there's a fish swimming around your screen.
 
 Executable: wanda
-Main-Is: Wanda.hs
+Main-Is: WandaMain.hs
 pkgconfig-depends: gtk+-2.0, glib-2.0, gobject-2.0, gdk-2.0, cairo
 CC-Options: -O3 -march=core2 -mtune=core2 -maccumulate-outgoing-args
 GHC-Options: -W -O2 -fvia-c -funbox-strict-fields -optc-O3

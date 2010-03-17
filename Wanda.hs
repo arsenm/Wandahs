@@ -23,6 +23,8 @@
 
 --TODO: Fortune logging?
 
+module Wanda where
+
 import Graphics.Rendering.Cairo
 
 import Graphics.UI.Gtk hiding (fill)
@@ -916,13 +918,10 @@ createWanda o (bckFrames, fwdFrames) = do
   return win
 
 -- | Main is main. Make Wanda go.
-main :: IO ()
-main = do
-  initGUI
+wandaMain :: IO ()
+wandaMain = do
   o  <- wandaOpts
   fr <- fishFrames (optScale o)
 
   replicateM_ (optNumFish o) (createWanda o fr)
-
-  mainGUI
 
