@@ -911,10 +911,6 @@ createWanda o (bckFrames, fwdFrames) = do
 
   win `on` screenChanged $ \scr -> do setAlpha win
                                       execIOState fishRef . setScreenSize =<< getScreenSize scr
-  win `on` buttonPressEvent $ do but <- eventButton
-                                 liftIO $ when (but == MiddleButton) mainQuit
-                                 fishClick win fishRef (optFortune o) (optMode o)
-
   return win
 
 -- | Main is main. Make Wanda go.
