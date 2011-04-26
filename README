@@ -1,0 +1,5 @@
+Wanda, a desktop fish!
+
+This Wanda combines some aspects of the "Fish applet" from GNOME and some aspects of the 'free the fish' easter egg.
+
+This Wanda can swim around and draw speech bubbles with fortunes in them when clicked, or run away kind of like 'free the fish.' Different command line arguments are accepted to configure fish behaviour.
